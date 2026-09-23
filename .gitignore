@@ -1,0 +1,19 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Large Model Checkpoints (downloaded automatically via scripts/download_models.py)
+onnx_models/
+
+# Temporary and OS files
+*.tmp
+.DS_Store
+Thumbs.db

@@ -41,6 +41,13 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing VoiceMimic Audio ML and Engine subsystems...")
     models_dir = Path("onnx_models")
 
+    # Ensure models are present (auto-downloads on first boot in Gradio Spaces)
+    required_models = ["dtln_model_1.onnx", "dtln_model_2.onnx", "silero_vad.onnx", "campplus.onnx"]
+    if not all((models_dir / m).exists() for m in required_models):
+        logger.info("ONNX models missing. Automatically fetching checkpoints...")
+        from scripts.download_models import main as download_all_models
+        download_all_models(str(models_dir))
+
     # 1. Initialize Core Audio Pipeline (Zero-PyTorch ONNX)
     app.state.pipeline = AudioPipeline(models_dir=models_dir, num_threads=2)
 

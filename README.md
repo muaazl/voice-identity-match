@@ -75,19 +75,12 @@ Open your browser at `http://localhost:7860`.
 
 ---
 
-## Docker Deployment (Hugging Face Spaces)
+## Cloud Deployment (Render / Web Service)
 
-The application includes a production-ready, self-contained `Dockerfile` configured for non-root execution (UID 1000) with models pre-baked into the image layer:
-
-### Build Image
-```bash
-docker build -t voice-mimic .
-```
-
-### Run Container
-```bash
-docker run -p 7860:7860 voice-mimic
-```
+Deploy seamlessly on Render or any Python cloud host:
+- **Environment**: Python 3.10+
+- **Build Command**: `pip install -r requirements.txt && python scripts/download_models.py`
+- **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 
 ---
 

@@ -33,8 +33,8 @@ RUN python scripts/download_models.py
 # Copy application source code and static assets
 COPY --chown=user:user . .
 
-# Hugging Face Spaces target port
+# Application target port
 EXPOSE 7860
 
-# Launch uvicorn single-worker process optimized for 2 vCPU basic tier
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1"]
+# Launch uvicorn single-worker process with dynamic PORT binding
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-7860} --workers 1"]

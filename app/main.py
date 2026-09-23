@@ -1,7 +1,7 @@
 """
 VoiceMimic FastAPI Application Entrypoint.
 Serves REST and WebSocket endpoints for real-time voice biometrics.
-Optimized for Hugging Face Spaces (2 vCPU, 16GB RAM, port 7860).
+Optimized for low-latency CPU execution via ONNX Runtime.
 """
 
 import os
@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing VoiceMimic Audio ML and Engine subsystems...")
     models_dir = Path("onnx_models")
 
-    # Ensure models are present (auto-downloads on first boot in Gradio Spaces)
+    # Ensure models are present (auto-downloads on first boot if missing)
     required_models = ["dtln_model_1.onnx", "dtln_model_2.onnx", "silero_vad.onnx", "campplus.onnx"]
     if not all((models_dir / m).exists() for m in required_models):
         logger.info("ONNX models missing. Automatically fetching checkpoints...")
@@ -73,12 +73,12 @@ async def lifespan(app: FastAPI):
 # Create FastAPI application
 app = FastAPI(
     title="VoiceMimic API",
-    description="Real-time Voice Biometric Party Game Engine on Hugging Face Spaces",
+    description="Real-time Voice Biometric Party Game Engine",
     version="1.0.0",
     lifespan=lifespan,
 )
 
-# CORS Middleware (Permissive for local development and HF Spaces iframe embedding)
+# CORS Middleware (Permissive for local development and web clients)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

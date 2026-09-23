@@ -1,16 +1,6 @@
----
-title: Voice Biometric Party Game
-emoji: 🎙️
-colorFrom: indigo
-colorTo: red
-sdk: gradio
-app_file: app.py
-pinned: false
----
-
 # VoiceMimic: Real-Time Voice Biometric Party Game
 
-**VoiceMimic** is an interactive, real-time voice biometric party game hosted on Hugging Face Spaces (CPU Basic Tier: 2 vCPU, 16GB RAM, port 7860). The application operates with **strictly zero PyTorch dependencies at runtime**, utilizing an optimized pipeline of DTLN speech enhancement, Silero VAD speech activity detection, and CAM++ acoustic feature extraction executed via `onnxruntime`.
+**VoiceMimic** is an interactive, real-time voice biometric party game. The application operates with **strictly zero PyTorch dependencies at runtime**, utilizing an optimized pipeline of DTLN speech enhancement, Silero VAD speech activity detection, and CAM++ acoustic feature extraction executed via `onnxruntime`.
 
 ---
 

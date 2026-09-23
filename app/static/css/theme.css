@@ -1,0 +1,83 @@
+/* VoiceMimic Minimalist Two-Tone Pastel Theme */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+    --pastel-subtle: #EEF2FF;
+    --pastel-border: #C7D2FE;
+    --pastel-accent: #4F46E5;
+    --pastel-accent-hover: #4338CA;
+    --slate-base: #F8FAFC;
+    --slate-surface: #FFFFFF;
+    --slate-border: #E2E8F0;
+    --slate-text: #0F172A;
+    --slate-muted: #64748B;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: var(--slate-base);
+    color: var(--slate-text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Subtle Pulsing Record Animation */
+@keyframes subtle-ring {
+    0% {
+        box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.35);
+    }
+    70% {
+        box-shadow: 0 0 0 16px rgba(79, 70, 229, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(79, 70, 229, 0);
+    }
+}
+
+.animate-record-pulse {
+    animation: subtle-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Minimalist Canvas Waveform */
+.waveform-canvas {
+    width: 100%;
+    height: 48px;
+    display: block;
+}
+
+/* Custom Scrollbar for Leaderboard */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
+    border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #94A3B8;
+}
+
+/* Segmented Pill Transition */
+.pill-tab {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Toast Animation */
+@keyframes toast-slide-up {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.toast-enter {
+    animation: toast-slide-up 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceMimic — Real-Time Voice Biometric Game</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        pastel: {
+                            subtle: '#EEF2FF',
+                            border: '#C7D2FE',
+                            accent: '#4F46E5',
+                        },
+                        slate: {
+                            base: '#F8FAFC',
+                            surface: '#FFFFFF',
+                            border: '#E2E8F0',
+                            muted: '#64748B',
+                            text: '#0F172A',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="/static/css/theme.css">
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen flex flex-col justify-between selection:bg-indigo-100 selection:text-indigo-900">
+
+    <!-- Global App Container -->
+    <div class="max-w-2xl mx-auto w-full px-4 sm:px-6 py-8 flex-1 flex flex-col">
+        
+        <!-- Header -->
+        <header class="flex items-center justify-between pb-6 border-b border-slate-200/80">
+            <div class="flex items-center gap-2.5">
+                <div class="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-pulse"></div>
+                <h1 class="text-lg font-semibold tracking-tight text-slate-900">VoiceMimic</h1>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <span id="enrolled-count" class="text-xs font-medium bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full border border-slate-200/60">
+                    0 Players
+                </span>
+                <button id="btn-open-leaderboard" class="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors" title="Leaderboard">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                </button>
+                <button id="btn-open-reset" class="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors" title="Reset Game">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="py-6 flex-1 flex flex-col gap-6">
+
+            <!-- Mode Segmented Switch -->
+            <div class="flex justify-center">
+                <div class="inline-flex p-1 bg-slate-100/90 rounded-full border border-slate-200/80">
+                    <button id="tab-guess-who" class="pill-tab px-5 py-2 rounded-full text-xs font-medium bg-white text-indigo-700 shadow-sm border border-slate-200/80">
+                        Guess Who
+                    </button>
+                    <button id="tab-impostor" class="pill-tab px-5 py-2 rounded-full text-xs font-medium text-slate-600 hover:text-slate-900">
+                        Impostor Challenge
+                    </button>
+                </div>
+            </div>
+
+            <!-- Enrollment Card -->
+            <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Player Registration</span>
+                </div>
+                <div class="flex flex-col sm:flex-row gap-2.5">
+                    <input id="input-player-name" type="text" placeholder="Enter player name..." maxlength="24"
+                        class="flex-1 bg-slate-50/70 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all">
+                    <button id="btn-record-reg"
+                        class="inline-flex items-center justify-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium px-4 py-2.5 rounded-xl text-sm transition-all border border-indigo-200/70 whitespace-nowrap">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"></circle></svg>
+                        <span id="text-record-reg">Record Sample</span>
+                    </button>
+                </div>
+
+                <!-- Enrolled Players Roster -->
+                <div class="mt-4 pt-3 border-t border-slate-100">
+                    <p id="roster-empty" class="text-xs text-slate-400 text-center py-1">No players registered yet. Add at least 2 players to start.</p>
+                    <div id="roster-list" class="flex flex-wrap gap-2 hidden"></div>
+                </div>
+            </div>
+
+            <!-- Arena A: Guess Who Section -->
+            <div id="section-guess-who" class="flex-1 flex flex-col gap-6">
+                <!-- Recording Area -->
+                <div class="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm flex flex-col items-center justify-center text-center">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-6">Blind Identifier</p>
+                    
+                    <button id="btn-record-guess"
+                        class="w-20 h-20 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-600 flex items-center justify-center border border-indigo-200/80 transition-all duration-300 shadow-sm active:scale-95">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+                    </button>
+
+                    <span id="text-record-guess" class="text-sm font-medium text-slate-700 mt-4">Tap to Speak</span>
+
+                    <!-- Minimalist Single-Line Waveform -->
+                    <div class="w-full max-w-xs mt-3">
+                        <canvas id="canvas-guess-waveform" class="waveform-canvas" width="320" height="48"></canvas>
+                    </div>
+                </div>
+
+                <!-- Result Card (Initially Hidden) -->
+                <div id="card-guess-result" class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hidden">
+                    <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                        <div>
+                            <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Model Prediction</span>
+                            <h2 id="text-predicted-name" class="text-xl font-semibold text-slate-900 mt-0.5">Player Name</h2>
+                        </div>
+                        <div class="text-right">
+                            <span id="text-match-confidence" class="text-sm font-semibold text-indigo-600">89% Match</span>
+                            <p id="text-match-margin" class="text-xs text-slate-400">High Confidence</p>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-3">
+                        <button id="btn-guess-correct" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 rounded-xl text-sm transition-all shadow-sm">
+                            Correct (+50 pts)
+                        </button>
+                        <button id="btn-guess-wrong" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2.5 rounded-xl text-sm transition-all border border-slate-200/80">
+                            Wrong (Select Speaker)
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Arena B: Impostor Challenge Section (Initially Hidden) -->
+            <div id="section-impostor" class="flex-1 flex flex-col gap-6 hidden">
+                <div class="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm flex flex-col items-center justify-center text-center">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-4">Acoustic Mimicry</p>
+
+                    <!-- Target Selector -->
+                    <div class="w-full max-w-xs mb-6">
+                        <select id="select-impostor-target" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all">
+                            <option value="">Select target player...</option>
+                        </select>
+                    </div>
+
+                    <button id="btn-record-mimic"
+                        class="w-20 h-20 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-600 flex items-center justify-center border border-indigo-200/80 transition-all duration-300 shadow-sm active:scale-95">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+                    </button>
+
+                    <span id="text-record-mimic" class="text-sm font-medium text-slate-700 mt-4">Attempt Mimicry</span>
+
+                    <!-- Waveform Canvas -->
+                    <div class="w-full max-w-xs mt-3">
+                        <canvas id="canvas-mimic-waveform" class="waveform-canvas" width="320" height="48"></canvas>
+                    </div>
+                </div>
+
+                <!-- Impostor Evaluation Result (Initially Hidden) -->
+                <div id="card-mimic-result" class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hidden">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 id="text-mimic-verdict" class="text-base font-semibold text-slate-800">Close Mimic!</h3>
+                        <span id="text-mimic-points" class="text-sm font-bold text-indigo-600">+42 pts</span>
+                    </div>
+
+                    <div class="space-y-1.5 mb-2">
+                        <div class="flex justify-between text-xs text-slate-500">
+                            <span>Acoustic Proximity</span>
+                            <span id="text-mimic-score" class="font-medium text-slate-800">72%</span>
+                        </div>
+                        <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                            <div id="bar-mimic-progress" class="h-full bg-indigo-600 rounded-full transition-all duration-500" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Footer -->
+        <footer class="pt-6 border-t border-slate-200/80 text-center text-xs text-slate-400">
+            Voice biometrics powered by DTLN, Silero VAD, and CAM++ (Zero-PyTorch ONNX Runtime).
+        </footer>
+    </div>
+
+    <!-- Modals -->
+
+    <!-- Leaderboard Modal -->
+    <div id="modal-leaderboard" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl border border-slate-200 max-w-sm w-full p-5 shadow-lg">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                <h3 class="font-semibold text-slate-900 text-sm">Leaderboard</h3>
+                <button id="btn-close-leaderboard" class="text-slate-400 hover:text-slate-600">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div id="leaderboard-list" class="mt-3 divide-y divide-slate-50 max-h-72 overflow-y-auto"></div>
+        </div>
+    </div>
+
+    <!-- Wrong Speaker Selection Modal -->
+    <div id="modal-wrong-speaker" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl border border-slate-200 max-w-sm w-full p-5 shadow-lg">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div>
+                    <h3 class="font-semibold text-slate-900 text-sm">Claim Speaker</h3>
+                    <p class="text-xs text-slate-400">Who actually spoke this round?</p>
+                </div>
+                <button id="btn-close-wrong-speaker" class="text-slate-400 hover:text-slate-600">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div id="speaker-select-list" class="mt-3 space-y-2 max-h-64 overflow-y-auto"></div>
+        </div>
+    </div>
+
+    <!-- Reset Modal -->
+    <div id="modal-reset" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl border border-slate-200 max-w-sm w-full p-5 shadow-lg">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                <h3 class="font-semibold text-slate-900 text-sm">Reset Game</h3>
+                <button id="btn-close-reset" class="text-slate-400 hover:text-slate-600">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <p class="text-xs text-slate-500 mt-3">Choose whether to reset scores only or wipe all player voice profiles.</p>
+            <div class="mt-4 flex flex-col gap-2">
+                <button id="btn-confirm-reset-scores" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium py-2.5 rounded-xl border border-slate-200 transition-colors">
+                    Reset Scores Only (Keep Voice Profiles)
+                </button>
+                <button id="btn-confirm-reset-all" class="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-medium py-2.5 rounded-xl border border-rose-200 transition-colors">
+                    Clear Everything (All Players & Scores)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Toast Container -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Scripts -->
+    <script src="/static/js/audio_recorder.js"></script>
+    <script src="/static/js/api_client.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

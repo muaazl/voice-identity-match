@@ -1,19 +1,12 @@
 """
-VoiceMimic Hugging Face Spaces Gradio-compatible Entrypoint.
-Mounts custom FastAPI application and serves on port 7860.
+VoiceMimic Hugging Face Spaces Entrypoint.
+Directly serves the FastAPI application and static frontend on port 7860.
+Zero-Gradio dependencies to avoid huggingface_hub version conflicts.
 """
 
 import os
 import uvicorn
-import gradio as gr
-from app.main import app as fastapi_app
-
-# Create a minimal Gradio block to satisfy HF Space Gradio health checks
-with gr.Blocks(title="VoiceMimic") as demo:
-    gr.HTML("<meta http-equiv='refresh' content='0; url=/'>")
-
-# Mount Gradio at /gradio so root / is served by our custom FastAPI Single-Page Application
-app = gr.mount_gradio_app(fastapi_app, demo, path="/gradio")
+from app.main import app
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))

@@ -127,3 +127,34 @@ def test_pipeline_with_metadata(audio_pipeline, synthetic_speech_audio):
     assert meta["raw_duration_sec"] > 2.0
     assert meta["speech_duration_sec"] > 0.0
     assert meta["l2_norm"] == pytest.approx(1.0, rel=1e-4)
+
+
+def test_silero_vad_hysteresis_and_crossfade(synthetic_speech_audio):
+    vad = SileroVAD(model_path=MODELS_DIR / "silero_vad.onnx")
+    # Test extract_speech with crossfade
+    speech = vad.extract_speech(synthetic_speech_audio, crossfade_ms=10)
+    assert isinstance(speech, np.ndarray)
+    assert len(speech) > 0
+    assert np.isfinite(speech).all()
+    # Test timestamps with hysteresis
+    segs = vad.get_speech_timestamps(synthetic_speech_audio, threshold=0.5, neg_threshold=0.35)
+    assert isinstance(segs, list)
+
+
+def test_gain_calibration_quiet_audio(audio_pipeline):
+    sr = 16000
+    t = np.linspace(0, 1.0, sr, endpoint=False)
+    # Generate very quiet signal (peak = 0.02)
+    quiet_signal = (0.02 * np.sin(2 * np.pi * 200 * t)).astype(np.float32)
+    loaded = audio_pipeline.load_audio(quiet_signal)
+    # Peak should be calibrated up to ~0.92
+    assert np.max(np.abs(loaded)) == pytest.approx(0.92, rel=0.05)
+
+
+def test_extract_robust_embedding(audio_pipeline, synthetic_speech_audio):
+    # Repeat audio to simulate a 5-second sample
+    longer_audio = np.tile(synthetic_speech_audio, 2)
+    emb = audio_pipeline.extract_robust_embedding(longer_audio)
+    assert isinstance(emb, np.ndarray)
+    assert emb.shape == (192,)
+    assert np.linalg.norm(emb) == pytest.approx(1.0, rel=1e-4)

@@ -86,13 +86,43 @@ class AudioPipeline:
             down = int(sr) // g
             audio = resample_poly(audio, up, down).astype(np.float32)
 
-        # Remove DC offset & peak normalize if safe
+        # Remove DC offset & calibrate nominal signal peak
         audio = audio - np.mean(audio)
-        max_val = np.max(np.abs(audio))
+        max_val = float(np.max(np.abs(audio)))
         if max_val > 1.0:
             audio = audio / max_val
+        elif max_val > 1e-4:
+            # Calibrate nominal peak level so quiet microphones are brought up to optimal range (~0.92)
+            audio = audio * (0.92 / max_val)
 
         return audio.astype(np.float32)
+
+    def extract_robust_embedding(
+        self, speech_audio: np.ndarray, window_sec: float = 3.0, hop_sec: float = 1.5
+    ) -> np.ndarray:
+        """
+        Extract multi-window ensemble embedding from speech audio.
+        Combines the full-utterance embedding with overlapping sub-segment embeddings
+        to construct a more invariant, noise-resilient speaker centroid.
+        """
+        full_emb = self.encoder.extract_embedding(speech_audio)
+        win_samples = int(window_sec * self.SAMPLE_RATE)
+        hop_samples = int(hop_sec * self.SAMPLE_RATE)
+
+        if len(speech_audio) < int(3.5 * self.SAMPLE_RATE):
+            return full_emb
+
+        embeddings = [full_emb]
+        for start in range(0, len(speech_audio) - win_samples + 1, hop_samples):
+            chunk = speech_audio[start : start + win_samples]
+            chunk_emb = self.encoder.extract_embedding(chunk)
+            embeddings.append(chunk_emb)
+
+        avg_emb = np.mean(embeddings, axis=0)
+        norm = np.linalg.norm(avg_emb)
+        if norm > 1e-12:
+            return (avg_emb / norm).astype(np.float32)
+        return avg_emb.astype(np.float32)
 
     def process(self, audio_input: Union[np.ndarray, bytes, str, Path]) -> np.ndarray:
         """
@@ -115,8 +145,8 @@ class AudioPipeline:
         # Stage 2: Silero VAD Active Speech Trimming
         speech_audio = self.vad.extract_speech(cleaned_audio, fallback_on_silence=True)
 
-        # Stage 3: CAM++ Feature Extraction & L2-Normalized Embedding
-        embedding = self.encoder.extract_embedding(speech_audio)
+        # Stage 3: CAM++ Feature Extraction with Robust Multi-Window Ensemble
+        embedding = self.extract_robust_embedding(speech_audio)
 
         return embedding
 
@@ -133,7 +163,7 @@ class AudioPipeline:
         speech_audio = self.vad.extract_speech(cleaned_audio, fallback_on_silence=True)
         speech_duration_sec = len(speech_audio) / self.SAMPLE_RATE
 
-        embedding = self.encoder.extract_embedding(speech_audio)
+        embedding = self.extract_robust_embedding(speech_audio)
 
         return {
             "embedding": embedding,

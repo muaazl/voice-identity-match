@@ -33,9 +33,13 @@ class CandidateMatch:
     player_id: str
     name: str
     similarity: float
+    probability: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        if self.probability is not None:
+            d["probability_percent"] = round(self.probability * 100, 1)
+        return d
 
 
 @dataclass

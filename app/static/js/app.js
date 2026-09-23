@@ -361,8 +361,11 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             textPredictedName.innerText = match.winner_name || 'No Match';
-            textMatchConfidence.innerText = `${match.confidence_percent}% Match`;
-            textMatchMargin.innerText = match.is_certain ? 'High Margin' : 'Disputed';
+            const confDisplay = match.top_probability_percent !== undefined
+                ? `${match.top_probability_percent}% Match`
+                : `${match.confidence_percent}% Match`;
+            textMatchConfidence.innerText = confDisplay;
+            textMatchMargin.innerText = match.is_certain ? 'High Margin' : (match.margin > 0.15 ? 'Moderate Margin' : 'Disputed');
 
             // Candidate breakdown
             guessRankingsList.innerHTML = '';
@@ -377,7 +380,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     const pct = document.createElement('span');
                     pct.style.fontWeight = '600';
                     pct.style.color = cand.player_id === match.winner_player_id ? 'var(--accent)' : 'var(--text-muted)';
-                    pct.innerText = `${cand.similarity_percent}%`;
+                    pct.innerText = cand.probability_percent !== undefined
+                        ? `${cand.similarity_percent}% (${cand.probability_percent}% prob)`
+                        : `${cand.similarity_percent}%`;
 
                     row.appendChild(name);
                     row.appendChild(pct);

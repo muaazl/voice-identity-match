@@ -36,14 +36,14 @@ class AudioRecorder {
                 channelCount: 1,
                 echoCancellation: true,
                 noiseSuppression: false,
-                autoGainControl: true,
+                autoGainControl: false,
             },
         });
         this.mediaStream = stream;
 
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         this.audioContext = new AudioCtx();
-        const nativeSampleRate = this.audioContext.sampleRate;
+        this.nativeSampleRate = this.audioContext.sampleRate;
 
         this.source = this.audioContext.createMediaStreamSource(stream);
         this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
@@ -52,8 +52,8 @@ class AudioRecorder {
             if (!this.recording) return;
 
             const inputData = e.inputBuffer.getChannelData(0);
-            const resampled = this._resampleAudio(inputData, nativeSampleRate, this.targetSampleRate);
-            this.recordedSamples.push(new Float32Array(resampled));
+            // Collect pristine samples at native rate without per-chunk truncation
+            this.recordedSamples.push(new Float32Array(inputData));
 
             // Instantaneous RMS computation
             let sumSquare = 0;
@@ -112,21 +112,52 @@ class AudioRecorder {
             totalSamples += chunk.length;
         }
 
-        const mergedSamples = new Float32Array(totalSamples);
+        const mergedNativeSamples = new Float32Array(totalSamples);
         let offset = 0;
         for (const chunk of this.recordedSamples) {
-            mergedSamples.set(chunk, offset);
+            mergedNativeSamples.set(chunk, offset);
             offset += chunk.length;
         }
 
-        return this._encodeWav(mergedSamples, this.targetSampleRate);
+        // Perform hardware-accelerated bandlimited anti-aliased sinc resampling to 16kHz
+        const resampledSamples = await this._resampleTo16k(mergedNativeSamples, this.nativeSampleRate || 48000);
+
+        return this._encodeWav(resampledSamples, this.targetSampleRate);
     }
 
     isRecording() {
         return this.recording;
     }
 
-    /** Resample float array from native rate to target rate (16000Hz) */
+    /** Resample float array to 16000Hz using browser OfflineAudioContext or fallback */
+    async _resampleTo16k(samples, inputRate) {
+        if (inputRate === this.targetSampleRate || samples.length === 0) return samples;
+
+        const targetLength = Math.max(1, Math.round((samples.length / inputRate) * this.targetSampleRate));
+        const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+
+        if (OfflineCtx) {
+            try {
+                const offlineCtx = new OfflineCtx(1, targetLength, this.targetSampleRate);
+                const audioBuffer = offlineCtx.createBuffer(1, samples.length, inputRate);
+                audioBuffer.getChannelData(0).set(samples);
+
+                const source = offlineCtx.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(offlineCtx.destination);
+                source.start(0);
+
+                const rendered = await offlineCtx.startRendering();
+                return rendered.getChannelData(0);
+            } catch (err) {
+                console.warn('OfflineAudioContext resample failed, using fallback:', err);
+            }
+        }
+
+        return this._resampleAudio(samples, inputRate, this.targetSampleRate);
+    }
+
+    /** Linear interpolation fallback with boundary preservation */
     _resampleAudio(inputData, inputRate, outputRate) {
         if (inputRate === outputRate) return inputData;
 

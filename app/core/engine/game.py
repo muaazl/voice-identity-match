@@ -57,6 +57,11 @@ class GameEngine:
         similarities = np.dot(matrix, q)
         similarities = np.clip(similarities, -1.0, 1.0)
 
+        # Contrastive softmax calibration with temperature tau=0.08
+        tau = 0.08
+        exp_sims = np.exp((similarities - np.max(similarities)) / tau)
+        probs = exp_sims / np.sum(exp_sims)
+
         # Sort in descending order
         sorted_indices = np.argsort(similarities)[::-1]
 
@@ -66,7 +71,15 @@ class GameEngine:
             player = self.registry.get_player(pid)
             name = player.name if player else pid
             score = float(similarities[idx])
-            rankings.append(CandidateMatch(player_id=pid, name=name, similarity=round(score, 4)))
+            prob = float(probs[idx])
+            rankings.append(
+                CandidateMatch(
+                    player_id=pid,
+                    name=name,
+                    similarity=round(score, 4),
+                    probability=round(prob, 4),
+                )
+            )
 
         top_idx = sorted_indices[0]
         top_pid = player_ids[top_idx]
@@ -81,11 +94,12 @@ class GameEngine:
         else:
             margin = confidence
 
-        is_certain = confidence >= threshold
+        top_prob = float(probs[top_idx])
+        is_certain = (confidence >= threshold) and (top_prob >= 0.50 or len(player_ids) == 1)
 
         logger.info(
             f"Mode A Match: Winner='{top_name}' ({top_pid}), "
-            f"Confidence={confidence:.4f}, Margin={margin:.4f}, Certain={is_certain}"
+            f"Confidence={confidence:.4f}, TopProb={top_prob:.2%}, Margin={margin:.4f}, Certain={is_certain}"
         )
 
         return IdentificationResult(

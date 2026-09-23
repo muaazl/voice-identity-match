@@ -72,6 +72,7 @@ async def guess_who(
             name=r.name,
             similarity=round(r.similarity, 4),
             similarity_percent=round(max(0.0, r.similarity) * 100, 1),
+            probability_percent=round(r.probability * 100, 1) if r.probability is not None else None,
         )
         for r in result.rankings
     ]

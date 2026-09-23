@@ -63,13 +63,23 @@
             };
         }
 
-        const rankings = players.map((p) => {
-            const score = cosineSimilarity(normQuery, p.centroid);
+        const rawScores = players.map((p) => cosineSimilarity(normQuery, p.centroid));
+        const maxScore = Math.max(...rawScores);
+        const tau = 0.08;
+        const expScores = rawScores.map((s) => Math.exp((s - maxScore) / tau));
+        const sumExp = expScores.reduce((acc, val) => acc + val, 0);
+        const probabilities = expScores.map((e) => (sumExp > 0 ? e / sumExp : 1 / players.length));
+
+        const rankings = players.map((p, idx) => {
+            const score = rawScores[idx];
+            const prob = probabilities[idx];
             return {
                 player_id: p.player_id,
                 name: p.name,
                 similarity: Math.round(score * 10000) / 10000,
                 similarity_percent: Math.round(Math.max(0, score) * 1000) / 10,
+                probability: Math.round(prob * 10000) / 10000,
+                probability_percent: Math.round(prob * 1000) / 10,
             };
         });
 
@@ -79,13 +89,15 @@
         const top = rankings[0];
         const second = rankings.length > 1 ? rankings[1] : null;
         const margin = second ? Math.round((top.similarity - second.similarity) * 10000) / 10000 : top.similarity;
-        const isCertain = top.similarity >= threshold;
+        const isCertain = (top.similarity >= threshold) && (top.probability >= 0.50 || players.length === 1);
 
         return {
             winner_player_id: top.player_id,
             winner_name: top.name,
             confidence: top.similarity,
             confidence_percent: top.similarity_percent,
+            top_probability: top.probability,
+            top_probability_percent: top.probability_percent,
             is_certain: isCertain,
             needs_confirmation: !isCertain,
             margin: margin,

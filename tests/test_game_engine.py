@@ -119,6 +119,10 @@ def test_mode_a_identification():
     assert result.margin > 0.40
     assert len(result.rankings) == 3
     assert result.rankings[0].player_id == "p_alice"
+    assert result.rankings[0].probability is not None
+    assert result.rankings[0].probability > 0.90
+    total_prob = sum(r.probability for r in result.rankings if r.probability is not None)
+    assert total_prob == pytest.approx(1.0, rel=1e-3)
 
 
 def test_mode_a_claim_round():

@@ -50,6 +50,7 @@ class CandidateMatchResponse(BaseModel):
     name: str
     similarity: float
     similarity_percent: float
+    probability_percent: Optional[float] = None
 
 
 class AudioMetricsResponse(BaseModel):

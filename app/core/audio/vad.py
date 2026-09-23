@@ -89,17 +89,27 @@ class SileroVAD:
         self,
         audio: np.ndarray,
         threshold: Optional[float] = None,
-        min_speech_duration_ms: int = 250,
-        min_silence_duration_ms: int = 100,
-        pad_ms: int = 100,
+        neg_threshold: Optional[float] = None,
+        min_speech_duration_ms: int = 200,
+        min_silence_duration_ms: int = 250,
+        pad_ms: int = 150,
     ) -> List[Tuple[int, int]]:
         """
-        Detect active speech intervals in samples.
+        Detect active speech intervals in samples using stateful hysteresis and hangover.
+
+        Args:
+            audio: 1D np.ndarray float32 waveform at 16kHz.
+            threshold: Probability threshold to activate speech state (default self.threshold, 0.50).
+            neg_threshold: Probability threshold to deactivate speech state (default threshold - 0.15).
+            min_speech_duration_ms: Minimum duration of a speech segment in milliseconds.
+            min_silence_duration_ms: Silence duration required to untrigger speech state.
+            pad_ms: Padding added before and after speech segments.
 
         Returns:
             List of (start_sample, end_sample) tuples.
         """
         th = threshold or self.threshold
+        neg_th = neg_threshold if neg_threshold is not None else max(0.15, th - 0.15)
         self.reset_states()
 
         window_size = self.WINDOW_SIZE
@@ -119,32 +129,43 @@ class SileroVAD:
             prob = self._infer_frame(chunk)
             speech_probs.append(prob)
 
-        # Convert chunk-level probabilities to speech segments
+        # Stateful hysteresis: trigger on >= th, untrigger only after min_silence_samples < neg_th
         triggered = False
         speech_segments: List[Tuple[int, int]] = []
         current_speech_start = 0
+        temp_end = 0
 
         for idx, prob in enumerate(speech_probs):
             sample_pos = idx * window_size
 
-            if prob >= th and not triggered:
-                triggered = True
-                current_speech_start = max(0, sample_pos - pad_samples)
-
-            elif prob < th and triggered:
-                # Check how long silence has lasted
-                triggered = False
-                speech_end = min(num_samples, sample_pos + window_size + pad_samples)
-                if (speech_end - current_speech_start) >= min_speech_samples:
-                    speech_segments.append((current_speech_start, speech_end))
+            if not triggered:
+                if prob >= th:
+                    triggered = True
+                    current_speech_start = max(0, sample_pos - pad_samples)
+                    temp_end = 0
+            else:
+                if prob < neg_th:
+                    if temp_end == 0:
+                        temp_end = sample_pos
+                    if (sample_pos - temp_end) >= min_silence_samples:
+                        speech_end = min(num_samples, temp_end + pad_samples)
+                        if (speech_end - current_speech_start) >= min_speech_samples:
+                            speech_segments.append((current_speech_start, speech_end))
+                        triggered = False
+                        temp_end = 0
+                else:
+                    # Still in speech or brief sub-threshold dip: keep speech alive
+                    temp_end = 0
 
         if triggered:
-            speech_segments.append((current_speech_start, num_samples))
+            speech_end = num_samples if temp_end == 0 else min(num_samples, temp_end + pad_samples)
+            if (speech_end - current_speech_start) >= min_speech_samples:
+                speech_segments.append((current_speech_start, speech_end))
 
-        # Merge overlapping segments
         if not speech_segments:
             return []
 
+        # Merge overlapping or close segments (closer than min_silence_samples)
         merged: List[Tuple[int, int]] = [speech_segments[0]]
         for start, end in speech_segments[1:]:
             prev_start, prev_end = merged[-1]
@@ -160,14 +181,16 @@ class SileroVAD:
         audio: np.ndarray,
         threshold: Optional[float] = None,
         fallback_on_silence: bool = True,
+        crossfade_ms: int = 10,
     ) -> np.ndarray:
         """
-        Extract and concatenate active speech chunks from 16kHz audio.
+        Extract and concatenate active speech chunks from 16kHz audio with Hann crossfade.
 
         Args:
             audio: 1D np.ndarray float32 audio.
             threshold: Probability threshold.
-            fallback_on_silence: If no speech is detected, return original audio rather than empty.
+            fallback_on_silence: If no speech is detected, return original audio.
+            crossfade_ms: Duration of smooth edge taper on spliced chunks.
 
         Returns:
             1D np.ndarray containing trimmed speech audio.
@@ -176,11 +199,37 @@ class SileroVAD:
             return audio
 
         segments = self.get_speech_timestamps(audio, threshold=threshold)
+        raw_duration = len(audio) / self.SAMPLE_RATE
+
+        # Energy check: check if audio actually contains voice energy
+        audio_rms = float(np.sqrt(np.mean(audio ** 2)))
+
         if not segments:
             if fallback_on_silence:
                 logger.warning("No speech detected by VAD, falling back to full audio.")
                 return audio
             return np.zeros(0, dtype=np.float32)
 
-        speech_chunks = [audio[start:end] for start, end in segments]
-        return np.concatenate(speech_chunks).astype(np.float32)
+        total_speech_samples = sum(end - start for start, end in segments)
+        speech_ratio = total_speech_samples / max(len(audio), 1)
+
+        # Fallback if VAD severely truncated audible audio (<15% speech on audible input)
+        if speech_ratio < 0.15 and audio_rms > 0.015 and fallback_on_silence:
+            logger.warning(
+                f"VAD extracted suspiciously short speech ({total_speech_samples / self.SAMPLE_RATE:.2f}s "
+                f"out of {raw_duration:.2f}s, RMS={audio_rms:.3f}). Falling back to full audio."
+            )
+            return audio
+
+        # Extract segments with Hann window taper at chunk boundaries to eliminate clicks
+        fade_samples = int(crossfade_ms * self.SAMPLE_RATE / 1000)
+        chunks = []
+        for start, end in segments:
+            chunk = audio[start:end].copy()
+            if len(chunk) > 2 * fade_samples and fade_samples > 0:
+                ramp = np.sin(np.linspace(0, np.pi / 2, fade_samples, dtype=np.float32)) ** 2
+                chunk[:fade_samples] *= ramp
+                chunk[-fade_samples:] *= ramp[::-1]
+            chunks.append(chunk)
+
+        return np.concatenate(chunks).astype(np.float32)

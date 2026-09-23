@@ -17,6 +17,17 @@ class PlayerRegisterResponse(BaseModel):
     audio_duration_sec: float
     speech_duration_sec: float
     message: str
+    embedding: Optional[List[float]] = None
+
+
+# -------------------------------------------------------------
+# Stateless Audio Embedding Extraction
+# -------------------------------------------------------------
+class AudioEmbedResponse(BaseModel):
+    embedding: List[float]
+    audio_metrics: "AudioMetricsResponse"
+    status: str = "success"
+
 
 
 class PlayerItem(BaseModel):
@@ -128,3 +139,26 @@ class HealthResponse(BaseModel):
     embedding_dim: int
     enrolled_players: int
     active_rounds: int
+
+
+# -------------------------------------------------------------
+# Room & Session Management
+# -------------------------------------------------------------
+class RoomCreateRequest(BaseModel):
+    room_code: Optional[str] = None
+
+
+class RoomCreateResponse(BaseModel):
+    room_code: str
+    created_at: float
+    message: str
+
+
+class RoomStatusResponse(BaseModel):
+    room_code: str
+    exists: bool
+    player_count: int
+    active_rounds: int
+    created_at: Optional[float] = None
+    last_active_at: Optional[float] = None
+

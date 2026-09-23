@@ -6,7 +6,7 @@ Handles Mode A (Blind Identifier), Mode B (Impostor Challenge), and Scoreboards.
 import uuid
 import logging
 from typing import Optional
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request, Depends
 
 from .schemas import (
     GuessWhoResponse,
@@ -20,6 +20,8 @@ from .schemas import (
     ResetRequest,
     ResetResponse,
 )
+from .dependencies import get_room
+from app.core.engine.room import GameRoom
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/game", tags=["Game"])
@@ -30,19 +32,21 @@ async def guess_who(
     request: Request,
     file: UploadFile = File(..., description="Utterance of the unknown speaker"),
     threshold: float = Form(0.65, description="Certainty threshold for Mode A"),
+    room: GameRoom = Depends(get_room),
 ):
     """
     Mode A: Blind Identifier.
     Accepts speech from an unknown player, identifies candidate using 1-of-N cosine similarity,
     and caches the round state for true-speaker claims.
+    Scoped to the active GameRoom.
     """
     audio_bytes = await file.read()
     if len(audio_bytes) < 320:
         raise HTTPException(status_code=400, detail="Audio file too small or empty.")
 
     pipeline = request.app.state.pipeline
-    game = request.app.state.game
-    round_cache = request.app.state.round_cache
+    game = room.game
+    round_cache = room.round_cache
 
     try:
         meta = pipeline.process_with_metadata(audio_bytes)
@@ -93,19 +97,20 @@ async def guess_who(
 
 
 @router.post("/confirm-speaker", response_model=ConfirmSpeakerResponse)
-async def confirm_speaker(request: Request, body: ConfirmSpeakerRequest):
+async def confirm_speaker(body: ConfirmSpeakerRequest, room: GameRoom = Depends(get_room)):
     """
     Mode A: True Speaker Claim & Adaptive Profile Update.
     Awards points to the true speaker and adaptively updates their voice centroid via EMA.
+    Scoped to the active GameRoom.
     """
-    game = request.app.state.game
-    registry = request.app.state.registry
-    round_cache = request.app.state.round_cache
+    game = room.game
+    registry = room.registry
+    round_cache = room.round_cache
 
     player = registry.get_player(body.actual_player_id)
     if not player:
         raise HTTPException(
-            status_code=404, detail=f"Player '{body.actual_player_id}' not found."
+            status_code=404, detail=f"Player '{body.actual_player_id}' not found in room '{room.room_code}'."
         )
 
     # Check if we have the cached query embedding for this round
@@ -146,23 +151,25 @@ async def mimic_challenge(
     file: UploadFile = File(..., description="Impersonation audio sample"),
     mimic_threshold: float = Form(0.60, description="Minimum score to earn partial points"),
     match_threshold: float = Form(0.82, description="Biometric firewall boundary for max points"),
+    room: GameRoom = Depends(get_room),
 ):
     """
     Mode B: Impostor Challenge.
     Measures acoustic proximity to the target player's centroid and evaluates biometric breach.
+    Scoped to the active GameRoom.
     """
     audio_bytes = await file.read()
     if len(audio_bytes) < 320:
         raise HTTPException(status_code=400, detail="Audio file too small or empty.")
 
     pipeline = request.app.state.pipeline
-    game = request.app.state.game
-    registry = request.app.state.registry
+    game = room.game
+    registry = room.registry
 
     target_player = registry.get_player(target_player_id)
     if not target_player:
         raise HTTPException(
-            status_code=404, detail=f"Target player '{target_player_id}' not found."
+            status_code=404, detail=f"Target player '{target_player_id}' not found in room '{room.room_code}'."
         )
 
     try:
@@ -195,11 +202,11 @@ async def mimic_challenge(
 
 
 @router.get("/scoreboard", response_model=ScoreboardResponse)
-async def get_scoreboard(request: Request):
-    """Retrieve current game leaderboard and active round counts."""
-    game = request.app.state.game
-    registry = request.app.state.registry
-    round_cache = request.app.state.round_cache
+async def get_scoreboard(room: GameRoom = Depends(get_room)):
+    """Retrieve current game leaderboard and active round counts for the active GameRoom."""
+    game = room.game
+    registry = room.registry
+    round_cache = room.round_cache
 
     entries = [ScoreboardEntry(**item) for item in game.get_scoreboard()]
     return ScoreboardResponse(
@@ -210,23 +217,24 @@ async def get_scoreboard(request: Request):
 
 
 @router.post("/reset", response_model=ResetResponse)
-async def reset_game(request: Request, body: ResetRequest = ResetRequest()):
-    """Reset player scores or completely clear game roster and active rounds."""
-    game = request.app.state.game
-    registry = request.app.state.registry
-    round_cache = request.app.state.round_cache
+async def reset_game(body: ResetRequest = ResetRequest(), room: GameRoom = Depends(get_room)):
+    """Reset player scores or completely clear game roster and active rounds for the active GameRoom."""
+    game = room.game
+    registry = room.registry
+    round_cache = room.round_cache
 
     if body.reset_scores_only:
         game.reset_scores()
-        msg = "Player scores reset to zero. Biometric profiles retained."
+        msg = f"Player scores in room '{room.room_code}' reset to zero. Biometric profiles retained."
     else:
         registry.reset()
         game.reset_scores()
         round_cache.clear()
-        msg = "Complete game reset: all players, scores, and active rounds cleared."
+        msg = f"Complete game reset for room '{room.room_code}': all players, scores, and active rounds cleared."
 
     return ResetResponse(
         message=msg,
         reset_scores_only=body.reset_scores_only,
         total_players=registry.count(),
     )
+

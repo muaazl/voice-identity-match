@@ -8,6 +8,7 @@ from .models import (
 )
 from .registry import VectorRegistry
 from .game import GameEngine
+from .room import GameRoom, RoomManager
 
 __all__ = [
     "PlayerProfile",
@@ -16,4 +17,7 @@ __all__ = [
     "ImpostorEvaluationResult",
     "VectorRegistry",
     "GameEngine",
+    "GameRoom",
+    "RoomManager",
 ]
+

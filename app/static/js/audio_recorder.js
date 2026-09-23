@@ -1,6 +1,7 @@
 /**
- * VoiceMimic Audio Recorder & Single-Line Waveform Visualizer.
- * Captures browser microphone, resamples to 16kHz mono, and encodes to 16-bit PCM WAV.
+ * VoiceMimic Audio Recorder & Waveform Visualizer.
+ * Captures browser microphone, resamples to 16kHz mono, and encodes to standard 16-bit PCM WAV.
+ * Features a high-DPI responsive organic audio waveform visualizer.
  */
 
 class AudioRecorder {
@@ -15,17 +16,20 @@ class AudioRecorder {
         this.visualizerCanvas = null;
         this.animationId = null;
         this.currentRms = 0;
+        this.targetRms = 0;
     }
 
     /**
      * Start recording mono audio at 16kHz.
-     * @param {HTMLCanvasElement|null} canvas - Optional canvas for minimalist single-line wave.
+     * @param {HTMLCanvasElement|null} canvas - Optional canvas for live waveform.
      */
     async start(canvas = null) {
         if (this.recording) return;
 
         this.recordedSamples = [];
         this.visualizerCanvas = canvas;
+        this.currentRms = 0;
+        this.targetRms = 0;
 
         const stream = await navigator.mediaDevices.getUserMedia({
             audio: {
@@ -37,33 +41,26 @@ class AudioRecorder {
         });
         this.mediaStream = stream;
 
-        // Create AudioContext (match browser native sample rate first, resample in processor)
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         this.audioContext = new AudioCtx();
         const nativeSampleRate = this.audioContext.sampleRate;
 
         this.source = this.audioContext.createMediaStreamSource(stream);
-
-        // Buffer size 4096 gives smooth processing without audio dropouts
         this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
 
         this.processor.onaudioprocess = (e) => {
             if (!this.recording) return;
 
             const inputData = e.inputBuffer.getChannelData(0);
-
-            // Resample down to 16000 Hz if native rate differs
             const resampled = this._resampleAudio(inputData, nativeSampleRate, this.targetSampleRate);
             this.recordedSamples.push(new Float32Array(resampled));
 
-            // Calculate instantaneous RMS for minimal visual feedback
+            // Instantaneous RMS computation
             let sumSquare = 0;
             for (let i = 0; i < inputData.length; i++) {
                 sumSquare += inputData[i] * inputData[i];
             }
-            const rms = Math.sqrt(sumSquare / inputData.length);
-            // Smooth RMS
-            this.currentRms = this.currentRms * 0.7 + rms * 0.3;
+            this.targetRms = Math.sqrt(sumSquare / inputData.length);
         };
 
         this.source.connect(this.processor);
@@ -71,12 +68,13 @@ class AudioRecorder {
         this.recording = true;
 
         if (this.visualizerCanvas) {
+            this._setupCanvasResolution();
             this._startWaveformAnimation();
         }
     }
 
     /**
-     * Stop recording and return a 16-bit 16kHz mono WAV Blob.
+     * Stop recording and return 16-bit 16kHz mono WAV Blob.
      * @returns {Promise<Blob>}
      */
     async stop() {
@@ -109,7 +107,6 @@ class AudioRecorder {
             this.mediaStream = null;
         }
 
-        // Concatenate all recorded Float32 chunks
         let totalSamples = 0;
         for (const chunk of this.recordedSamples) {
             totalSamples += chunk.length;
@@ -122,7 +119,6 @@ class AudioRecorder {
             offset += chunk.length;
         }
 
-        // Encode to 16-bit PCM WAV Blob
         return this._encodeWav(mergedSamples, this.targetSampleRate);
     }
 
@@ -130,7 +126,7 @@ class AudioRecorder {
         return this.recording;
     }
 
-    /** Resample float audio array from native rate to target rate (16000Hz) */
+    /** Resample float array from native rate to target rate (16000Hz) */
     _resampleAudio(inputData, inputRate, outputRate) {
         if (inputRate === outputRate) return inputData;
 
@@ -143,7 +139,6 @@ class AudioRecorder {
             const indexBefore = Math.floor(originIndex);
             const indexAfter = Math.min(indexBefore + 1, inputData.length - 1);
             const weight = originIndex - indexBefore;
-            // Linear interpolation
             result[i] = inputData[indexBefore] * (1 - weight) + inputData[indexAfter] * weight;
         }
         return result;
@@ -166,8 +161,8 @@ class AudioRecorder {
 
         // fmt subchunk
         this._writeString(view, 12, 'fmt ');
-        view.setUint32(16, 16, true); // Subchunk1Size for PCM
-        view.setUint16(20, 1, true); // AudioFormat: 1 = PCM
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true); // PCM
         view.setUint16(22, numChannels, true);
         view.setUint32(24, sampleRate, true);
         view.setUint32(28, byteRate, true);
@@ -178,11 +173,10 @@ class AudioRecorder {
         this._writeString(view, 36, 'data');
         view.setUint32(40, dataLength, true);
 
-        // Write 16-bit PCM samples
+        // 16-bit PCM samples
         let offset = 44;
         for (let i = 0; i < samples.length; i++, offset += 2) {
             const s = Math.max(-1, Math.min(1, samples[i]));
-            // Convert to 16-bit signed int (-32768 to 32767)
             view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
         }
 
@@ -195,7 +189,23 @@ class AudioRecorder {
         }
     }
 
-    /** Subtle Single-Line Waveform Visualizer */
+    /** Ensure high-DPI crisp rendering on Retina / 4K displays */
+    _setupCanvasResolution() {
+        if (!this.visualizerCanvas) return;
+        const canvas = this.visualizerCanvas;
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const width = rect.width || 320;
+        const height = rect.height || 48;
+
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        const ctx = canvas.getContext('2d');
+        ctx.resetTransform();
+        ctx.scale(dpr, dpr);
+    }
+
+    /** Clean, fluid mirrored energy visualizer */
     _startWaveformAnimation() {
         const canvas = this.visualizerCanvas;
         const ctx = canvas.getContext('2d');
@@ -204,33 +214,40 @@ class AudioRecorder {
         const render = () => {
             if (!this.recording) return;
 
-            const width = canvas.width;
-            const height = canvas.height;
+            const rect = canvas.getBoundingClientRect();
+            const width = rect.width || 320;
+            const height = rect.height || 48;
+
             ctx.clearRect(0, 0, width, height);
 
+            // Smooth RMS interpolation
+            this.currentRms += (this.targetRms - this.currentRms) * 0.25;
+
             const midY = height / 2;
-            const amplitude = Math.max(3, Math.min(height * 0.42, this.currentRms * height * 2.8));
+            const numBars = 32;
+            const barSpacing = width / numBars;
+            const barWidth = Math.max(2.5, barSpacing * 0.55);
 
-            ctx.beginPath();
-            ctx.lineWidth = 2.0;
-            ctx.strokeStyle = '#6366F1'; // Pastel Indigo Accent
-            ctx.lineCap = 'round';
+            for (let i = 0; i < numBars; i++) {
+                const norm = i / (numBars - 1);
+                // Bell curve envelope so edges taper gracefully
+                const envelope = Math.sin(norm * Math.PI);
+                const wave = Math.sin(i * 0.35 + phase) * 0.35 + 0.65;
+                const dynamicHeight = Math.max(4, this.currentRms * height * 2.6 * envelope * wave);
 
-            for (let x = 0; x < width; x++) {
-                const normalizedX = x / width;
-                // Soft sine wave envelope modulated by RMS energy
-                const envelope = Math.sin(normalizedX * Math.PI);
-                const y = midY + Math.sin(x * 0.05 + phase) * amplitude * envelope;
+                const x = i * barSpacing + (barSpacing - barWidth) / 2;
+                const topY = midY - dynamicHeight / 2;
 
-                if (x === 0) {
-                    ctx.moveTo(x, y);
-                } else {
-                    ctx.lineTo(x, y);
-                }
+                // Clean indigo gradient
+                const gradient = ctx.createLinearGradient(0, topY, 0, topY + dynamicHeight);
+                gradient.addColorStop(0, '#4F46E5'); // Indigo 600
+                gradient.addColorStop(1, '#818CF8'); // Indigo 400
+
+                ctx.fillStyle = gradient;
+                this._drawRoundedRect(ctx, x, topY, barWidth, dynamicHeight, barWidth / 2);
             }
-            ctx.stroke();
 
-            phase += 0.15;
+            phase += 0.12;
             this.animationId = requestAnimationFrame(render);
         };
 
@@ -241,14 +258,31 @@ class AudioRecorder {
         if (!this.visualizerCanvas) return;
         const canvas = this.visualizerCanvas;
         const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        // Draw calm flat center line
+        const rect = canvas.getBoundingClientRect();
+        const width = rect.width || 320;
+        const height = rect.height || 48;
+
+        ctx.clearRect(0, 0, width, height);
+
+        // Calm, resting flat line
         ctx.beginPath();
         ctx.strokeStyle = '#E2E8F0';
-        ctx.lineWidth = 1;
-        ctx.moveTo(0, canvas.height / 2);
-        ctx.lineTo(canvas.width, canvas.height / 2);
+        ctx.lineWidth = 1.5;
+        ctx.moveTo(8, height / 2);
+        ctx.lineTo(width - 8, height / 2);
         ctx.stroke();
+    }
+
+    _drawRoundedRect(ctx, x, y, width, height, radius) {
+        const r = Math.min(radius, width / 2, height / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.arcTo(x + width, y, x + width, y + height, r);
+        ctx.arcTo(x + width, y + height, x, y + height, r);
+        ctx.arcTo(x, y + height, x, y, r);
+        ctx.arcTo(x, y, x + width, y, r);
+        ctx.closePath();
+        ctx.fill();
     }
 }
 

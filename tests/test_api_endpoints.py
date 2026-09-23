@@ -45,6 +45,21 @@ def test_health_check(client):
     assert data["embedding_dim"] == 192
 
 
+def test_stateless_audio_embed(client):
+    wav = make_wav_bytes(duration_sec=2.0, freq=220.0)
+    response = client.post(
+        "/api/audio/embed",
+        files={"file": ("sample.wav", wav, "audio/wav")},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert len(data["embedding"]) == 192
+    assert "audio_metrics" in data
+    assert data["audio_metrics"]["raw_duration_sec"] > 0
+
+
+
 def test_player_registration(client):
     # Reset game state before test
     client.post("/api/game/reset", json={"reset_scores_only": False})

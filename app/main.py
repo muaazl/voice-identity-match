@@ -17,13 +17,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.core.audio.pipeline import AudioPipeline
-from app.core.engine.registry import VectorRegistry
-from app.core.engine.game import GameEngine
-from app.api.round_cache import RoundCache
+from app.core.engine.room import RoomManager
 from app.api.routes_players import router as players_router
 from app.api.routes_game import router as game_router
+from app.api.routes_rooms import router as rooms_router
+from app.api.routes_audio import router as audio_router
 from app.api.routes_ws import router as ws_router
 from app.api.schemas import HealthResponse
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,8 +36,8 @@ logger = logging.getLogger("VoiceMimic")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Lifespan context manager: Pre-loads ONNX models, initializes the vector
-    registry and game engine, and runs an in-memory warm-up pass.
+    Lifespan context manager: Pre-loads ONNX models, initializes the room manager
+    and engine subsystems, and runs an in-memory warm-up pass.
     """
     logger.info("Initializing VoiceMimic Audio ML and Engine subsystems...")
     models_dir = Path("onnx_models")
@@ -51,10 +52,14 @@ async def lifespan(app: FastAPI):
     # 1. Initialize Core Audio Pipeline (Zero-PyTorch ONNX)
     app.state.pipeline = AudioPipeline(models_dir=models_dir, num_threads=2)
 
-    # 2. Initialize Biometric Vector Registry & Game Engine
-    app.state.registry = VectorRegistry(embedding_dim=192)
-    app.state.game = GameEngine(app.state.registry)
-    app.state.round_cache = RoundCache(max_size=500, ttl_seconds=3600.0)
+    # 2. Initialize Multi-Room Session Orchestrator
+    app.state.room_manager = RoomManager(default_room_code="DEFAULT", embedding_dim=192)
+
+    # Backward compatibility aliases pointing to DEFAULT room
+    default_room = app.state.room_manager.get_or_create_room("DEFAULT")
+    app.state.registry = default_room.registry
+    app.state.game = default_room.game
+    app.state.round_cache = default_room.round_cache
 
     # 3. Model Warm-up Pass (Eliminates runtime cold-start JIT delay)
     logger.info("Executing model warm-up forward pass...")
@@ -88,25 +93,33 @@ app.add_middleware(
 )
 
 # Include Routers
+app.include_router(audio_router)
+app.include_router(rooms_router)
 app.include_router(players_router)
 app.include_router(game_router)
 app.include_router(ws_router)
+
 
 
 @app.get("/api/health", response_model=HealthResponse, tags=["Health"])
 async def health_check():
     """Service health and diagnostics endpoint."""
     pipeline_loaded = hasattr(app.state, "pipeline") and app.state.pipeline is not None
+    room_manager: RoomManager = getattr(app.state, "room_manager", None)
     registry = getattr(app.state, "registry", None)
     round_cache = getattr(app.state, "round_cache", None)
+
+    enrolled = registry.count() if registry else 0
+    active_rounds = round_cache.count() if round_cache else 0
 
     return HealthResponse(
         status="healthy" if pipeline_loaded else "initializing",
         models_loaded=pipeline_loaded,
         embedding_dim=192,
-        enrolled_players=registry.count() if registry else 0,
-        active_rounds=round_cache.count() if round_cache else 0,
+        enrolled_players=enrolled,
+        active_rounds=active_rounds,
     )
+
 
 
 # Mount static assets from app/static/

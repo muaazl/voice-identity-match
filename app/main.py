@@ -24,13 +24,14 @@ from app.api.routes_rooms import router as rooms_router
 from app.api.routes_audio import router as audio_router
 from app.api.routes_ws import router as ws_router
 from app.api.schemas import HealthResponse
+from app.config import settings
 
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] [%(name)s]: %(message)s",
 )
-logger = logging.getLogger("VoiceMimic")
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -40,7 +41,7 @@ async def lifespan(app: FastAPI):
     and engine subsystems, and runs an in-memory warm-up pass.
     """
     logger.info("Initializing VoiceMimic Audio ML and Engine subsystems...")
-    models_dir = Path("onnx_models")
+    models_dir = Path(settings.models_dir)
 
     # Ensure models are present (auto-downloads on first boot if missing)
     required_models = ["dtln_model_1.onnx", "dtln_model_2.onnx", "silero_vad.onnx", "campplus.onnx"]
@@ -50,16 +51,20 @@ async def lifespan(app: FastAPI):
         download_all_models(str(models_dir))
 
     # 1. Initialize Core Audio Pipeline (Zero-PyTorch ONNX)
-    app.state.pipeline = AudioPipeline(models_dir=models_dir, num_threads=2)
+    app.state.pipeline = AudioPipeline(
+        models_dir=models_dir, 
+        num_threads=settings.num_threads,
+        vad_threshold=settings.vad_threshold
+    )
 
     # 2. Initialize Multi-Room Session Orchestrator
-    app.state.room_manager = RoomManager(default_room_code="DEFAULT", embedding_dim=192)
+    app.state.room_manager = RoomManager(
+        default_room_code=settings.default_room_code, 
+        embedding_dim=settings.embedding_dim
+    )
 
-    # Backward compatibility aliases pointing to DEFAULT room
-    default_room = app.state.room_manager.get_or_create_room("DEFAULT")
-    app.state.registry = default_room.registry
-    app.state.game = default_room.game
-    app.state.round_cache = default_room.round_cache
+    # Prime default room
+    app.state.room_manager.get_or_create_room(settings.default_room_code)
 
     # 3. Model Warm-up Pass (Eliminates runtime cold-start JIT delay)
     logger.info("Executing model warm-up forward pass...")
@@ -73,6 +78,8 @@ async def lifespan(app: FastAPI):
     logger.info("VoiceMimic server is ready to accept biometric requests.")
     yield
     logger.info("Shutting down VoiceMimic server...")
+    if hasattr(app.state, "pipeline"):
+        del app.state.pipeline
 
 
 # Create FastAPI application
@@ -84,9 +91,11 @@ app = FastAPI(
 )
 
 # CORS Middleware (Permissive for local development and web clients)
+origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -105,17 +114,22 @@ app.include_router(ws_router)
 async def health_check():
     """Service health and diagnostics endpoint."""
     pipeline_loaded = hasattr(app.state, "pipeline") and app.state.pipeline is not None
-    room_manager: RoomManager = getattr(app.state, "room_manager", None)
-    registry = getattr(app.state, "registry", None)
-    round_cache = getattr(app.state, "round_cache", None)
+    room_manager = getattr(app.state, "room_manager", None)
 
-    enrolled = registry.count() if registry else 0
-    active_rounds = round_cache.count() if round_cache else 0
+    enrolled = 0
+    active_rounds = 0
+    if room_manager:
+        # Aggregate across all active rooms
+        for room_code in room_manager.list_active_rooms():
+            room = room_manager.get_room(room_code)
+            if room:
+                enrolled += room.registry.count()
+                active_rounds += room.round_cache.count()
 
     return HealthResponse(
         status="healthy" if pipeline_loaded else "initializing",
         models_loaded=pipeline_loaded,
-        embedding_dim=192,
+        embedding_dim=settings.embedding_dim,
         enrolled_players=enrolled,
         active_rounds=active_rounds,
     )
@@ -142,7 +156,6 @@ else:
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.environ.get("PORT", 7860))
     host = "0.0.0.0"
-    logger.info(f"Starting server on {host}:{port}...")
-    uvicorn.run("app.main:app", host=host, port=port, reload=False, workers=1)
+    logger.info(f"Starting server on {host}:{settings.port}...")
+    uvicorn.run("app.main:app", host=host, port=settings.port, reload=settings.debug, workers=1)

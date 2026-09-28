@@ -5,27 +5,21 @@ Handles room creation, validation, status, and listing.
 
 import logging
 from typing import Optional
-from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi import APIRouter, Request, Depends
 
 from .schemas import RoomCreateRequest, RoomCreateResponse, RoomStatusResponse
 from app.core.engine.room import RoomManager
+from .dependencies import get_room_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/rooms", tags=["Rooms"])
-
-
-def _get_room_manager(request: Request) -> RoomManager:
-    manager = getattr(request.app.state, "room_manager", None)
-    if not manager:
-        raise HTTPException(status_code=500, detail="Room manager not initialized.")
-    return manager
 
 
 @router.post("/create", response_model=RoomCreateResponse)
 async def create_room(
     request: Request,
     body: Optional[RoomCreateRequest] = None,
-    manager: RoomManager = Depends(_get_room_manager),
+    manager: RoomManager = Depends(get_room_manager),
 ):
     """
     Create a new isolated game room with a 4-letter code.
@@ -44,7 +38,7 @@ async def create_room(
 @router.get("/{room_code}/status", response_model=RoomStatusResponse)
 async def get_room_status(
     room_code: str,
-    manager: RoomManager = Depends(_get_room_manager),
+    manager: RoomManager = Depends(get_room_manager),
 ):
     """
     Check if a room exists, its active player count, and timestamp.
@@ -74,7 +68,7 @@ async def get_room_status(
 
 @router.get("", tags=["Rooms"])
 async def list_active_rooms(
-    manager: RoomManager = Depends(_get_room_manager),
+    manager: RoomManager = Depends(get_room_manager),
 ):
     """List all currently active rooms (excluding expired)."""
     return {

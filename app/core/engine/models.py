@@ -64,7 +64,7 @@ class IdentificationResult:
 
 
 @dataclass
-class ImpostorEvaluationResult:
+class MimicResult:
     """Result of Mode B Impostor Challenge matching."""
     target_player_id: str
     target_name: str

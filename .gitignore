@@ -17,3 +17,6 @@ onnx_models/
 *.tmp
 .DS_Store
 Thumbs.db
+
+.env
+onnx_models/

@@ -42,7 +42,7 @@ async def websocket_vad_stream(websocket: WebSocket):
                 else:
                     samples = raw[:512]
 
-            prob = vad._infer_frame(samples)
+            prob = vad.infer(samples)
             is_speech = prob >= vad.threshold
 
             await websocket.send_json({

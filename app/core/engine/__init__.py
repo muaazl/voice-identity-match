@@ -4,7 +4,7 @@ from .models import (
     PlayerProfile,
     CandidateMatch,
     IdentificationResult,
-    ImpostorEvaluationResult,
+    MimicResult,
 )
 from .registry import VectorRegistry
 from .game import GameEngine
@@ -14,7 +14,7 @@ __all__ = [
     "PlayerProfile",
     "CandidateMatch",
     "IdentificationResult",
-    "ImpostorEvaluationResult",
+    "MimicResult",
     "VectorRegistry",
     "GameEngine",
     "GameRoom",

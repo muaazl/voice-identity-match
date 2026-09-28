@@ -8,11 +8,11 @@ import random
 import string
 import threading
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 from .registry import VectorRegistry
 from .game import GameEngine
-from app.api.round_cache import RoundCache
+from .round_cache import RoundCache
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class GameRoom:
         """Check if room has exceeded maximum idle time (default 2 hours)."""
         return (time.time() - self.last_active_at) > max_idle_seconds
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> Dict[str, Any]:
         """Serialize room status metadata."""
         return {
             "room_code": self.room_code,
@@ -114,9 +114,14 @@ class RoomManager:
         """Retrieve existing room or create a new one if it does not exist."""
         code = room_code.upper().strip() if room_code else self._default_room_code
         with self._lock:
-            room = self.get_room(code)
+            room = self._rooms.get(code)
             if room:
-                return room
+                if code != self._default_room_code and room.is_expired():
+                    del self._rooms[code]
+                    logger.info(f"Evicted expired GameRoom '{code}' on access.")
+                else:
+                    room.touch()
+                    return room
             room = GameRoom(room_code=code, embedding_dim=self._embedding_dim)
             self._rooms[code] = room
             logger.info(f"Initialized GameRoom '{code}'")

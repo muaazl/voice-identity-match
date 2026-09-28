@@ -10,11 +10,12 @@ import logging
 from typing import Optional, List, Dict, Any
 import numpy as np
 
-from .registry import VectorRegistry, _normalize_vector
+from .registry import VectorRegistry
+from .utils import _normalize_vector
 from .models import (
     CandidateMatch,
     IdentificationResult,
-    ImpostorEvaluationResult,
+    MimicResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -159,7 +160,7 @@ class GameEngine:
         query_embedding: np.ndarray,
         mimic_threshold: float = 0.60,
         match_threshold: float = 0.82,
-    ) -> ImpostorEvaluationResult:
+    ) -> MimicResult:
         """
         Mode B: Impostor Challenge evaluation against target player's centroid.
 
@@ -175,7 +176,7 @@ class GameEngine:
             match_threshold: Biometric authentication boundary for system fooling.
 
         Returns:
-            ImpostorEvaluationResult.
+            MimicResult.
         """
         target = self.registry.get_player(target_player_id)
         if not target:
@@ -208,7 +209,7 @@ class GameEngine:
             f"Status={status}, Points={points}, Breached={security_breached}"
         )
 
-        return ImpostorEvaluationResult(
+        return MimicResult(
             target_player_id=target_player_id,
             target_name=target.name,
             similarity_score=score,

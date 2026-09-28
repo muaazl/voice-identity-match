@@ -10,19 +10,9 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 
 from .models import PlayerProfile
+from .utils import _normalize_vector
 
 logger = logging.getLogger(__name__)
-
-
-def _normalize_vector(vec: np.ndarray, eps: float = 1e-12) -> np.ndarray:
-    """Ensure vector is float32 with unit L2 norm."""
-    v = np.asarray(vec, dtype=np.float32).flatten()
-    norm = np.linalg.norm(v)
-    if norm > eps:
-        return (v / norm).astype(np.float32)
-    return v.astype(np.float32)
-
-
 class VectorRegistry:
     """Thread-safe in-memory storage for player centroids and similarity computation."""
 
@@ -31,6 +21,10 @@ class VectorRegistry:
         self._embedding_dim = embedding_dim
         # Stored internally as dictionary of PlayerProfile
         self._players: Dict[str, PlayerProfile] = {}
+        self._matrix_cache: Optional[Tuple[List[str], np.ndarray]] = None
+
+    def _invalidate_cache(self):
+        self._matrix_cache = None
 
     def register_player(self, player_id: str, name: str, embedding: np.ndarray) -> PlayerProfile:
         """
@@ -67,6 +61,7 @@ class VectorRegistry:
                 )
                 self._players[player_id] = profile
 
+            self._invalidate_cache()
             logger.info(f"Registered player '{name}' (ID: {player_id})")
             return profile
 
@@ -85,6 +80,7 @@ class VectorRegistry:
         with self._lock:
             if player_id in self._players:
                 del self._players[player_id]
+                self._invalidate_cache()
                 logger.info(f"Removed player ID: {player_id}")
                 return True
             return False
@@ -140,6 +136,7 @@ class VectorRegistry:
 
             player.centroid = normalized_updated
             player.sample_count += 1
+            self._invalidate_cache()
 
             logger.info(
                 f"Updated centroid for '{player.name}' (ID: {player_id}, sample #{player.sample_count})"
@@ -155,17 +152,23 @@ class VectorRegistry:
             Tuple of (list_of_player_ids, matrix_of_centroids).
         """
         with self._lock:
+            if self._matrix_cache is not None:
+                return self._matrix_cache
+
             if not self._players:
-                return [], np.empty((0, self._embedding_dim), dtype=np.float32)
+                self._matrix_cache = ([], np.empty((0, self._embedding_dim), dtype=np.float32))
+                return self._matrix_cache
 
             player_ids = list(self._players.keys())
             matrix = np.stack([self._players[pid].centroid for pid in player_ids]).astype(
                 np.float32
             )
-            return player_ids, matrix
+            self._matrix_cache = (player_ids, matrix)
+            return self._matrix_cache
 
     def reset(self) -> None:
         """Clear all enrolled players."""
         with self._lock:
             self._players.clear()
+            self._invalidate_cache()
             logger.info("VectorRegistry reset: all players cleared.")

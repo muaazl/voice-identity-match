@@ -98,10 +98,12 @@ def _compute_fbank_numpy(
         f_m = bins[m]
         f_m_plus = bins[m + 1]
 
-        for k in range(f_m_minus, f_m):
-            fbank[m - 1, k] = (k - bins[m - 1]) / max(f_m - f_m_minus, 1)
-        for k in range(f_m, f_m_plus):
-            fbank[m - 1, k] = (bins[m + 1] - k) / max(f_m_plus - f_m, 1)
+        if f_m > f_m_minus:
+            k = np.arange(f_m_minus, f_m)
+            fbank[m - 1, k] = (k - f_m_minus) / max(f_m - f_m_minus, 1)
+        if f_m_plus > f_m:
+            k = np.arange(f_m, f_m_plus)
+            fbank[m - 1, k] = (f_m_plus - k) / max(f_m_plus - f_m, 1)
 
     filter_banks = np.dot(pow_frames, fbank.T)
     filter_banks = np.where(filter_banks == 0, np.finfo(float).eps, filter_banks)
@@ -119,7 +121,7 @@ def extract_fbank(audio: np.ndarray, sample_rate: int = 16000) -> np.ndarray:
     return _compute_fbank_numpy(audio, sample_rate=sample_rate)
 
 
-class CAMPPEncoder:
+class CamPPEncoder:
     """CAM++ 192-D Speaker Verification Embedding Extractor (ONNX)."""
 
     EMBEDDING_DIM = 192
@@ -138,10 +140,8 @@ class CAMPPEncoder:
                 f"Please run scripts/download_models.py."
             )
 
-        sess_options = ort.SessionOptions()
-        sess_options.intra_op_num_threads = num_threads
-        sess_options.inter_op_num_threads = 1
-        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        from .utils import make_session_options
+        sess_options = make_session_options(num_threads)
 
         self.session = ort.InferenceSession(
             str(self.model_path), sess_options, providers=["CPUExecutionProvider"]
@@ -149,7 +149,7 @@ class CAMPPEncoder:
 
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
-        logger.info(f"Initialized CAMPPEncoder with {self.model_path.name}")
+        logger.info(f"Initialized CamPPEncoder with {self.model_path.name}")
 
     def extract_embedding(self, audio: np.ndarray) -> np.ndarray:
         """

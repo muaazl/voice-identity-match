@@ -2,7 +2,7 @@
 
 from .denoiser import DTLNDenoiser
 from .vad import SileroVAD
-from .encoder import CAMPPEncoder
+from .encoder import CamPPEncoder
 from .pipeline import AudioPipeline
 
-__all__ = ["DTLNDenoiser", "SileroVAD", "CAMPPEncoder", "AudioPipeline"]
+__all__ = ["DTLNDenoiser", "SileroVAD", "CamPPEncoder", "AudioPipeline"]

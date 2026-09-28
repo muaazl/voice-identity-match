@@ -9,12 +9,12 @@ from typing import Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request, Depends
 
 from .schemas import (
-    GuessWhoResponse,
+    IdentifyResponse,
     CandidateMatchResponse,
     AudioMetricsResponse,
     ConfirmSpeakerRequest,
     ConfirmSpeakerResponse,
-    MimicChallengeResponse,
+    MimicResponse,
     ScoreboardResponse,
     ScoreboardEntry,
     ResetRequest,
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/game", tags=["Game"])
 
 
-@router.post("/guess-who", response_model=GuessWhoResponse)
+@router.post("/guess-who", response_model=IdentifyResponse)
 async def guess_who(
     request: Request,
     file: UploadFile = File(..., description="Utterance of the unknown speaker"),
@@ -83,7 +83,7 @@ async def guess_who(
         speech_ratio=meta["speech_ratio"],
     )
 
-    return GuessWhoResponse(
+    return IdentifyResponse(
         round_id=round_id,
         predicted_player_id=result.winner_player_id,
         predicted_name=result.winner_name,
@@ -108,10 +108,10 @@ async def confirm_speaker(body: ConfirmSpeakerRequest, room: GameRoom = Depends(
     registry = room.registry
     round_cache = room.round_cache
 
-    player = registry.get_player(body.actual_player_id)
+    player = registry.get_player(body.player_id)
     if not player:
         raise HTTPException(
-            status_code=404, detail=f"Player '{body.actual_player_id}' not found in room '{room.room_code}'."
+            status_code=404, detail=f"Player '{body.player_id}' not found in room '{room.room_code}'."
         )
 
     # Check if we have the cached query embedding for this round
@@ -119,7 +119,7 @@ async def confirm_speaker(body: ConfirmSpeakerRequest, room: GameRoom = Depends(
 
     if cached_round and "embedding" in cached_round:
         claim_result = game.claim_round(
-            true_player_id=body.actual_player_id,
+            true_player_id=body.player_id,
             query_embedding=cached_round["embedding"],
             points=body.points,
         )
@@ -131,7 +131,7 @@ async def confirm_speaker(body: ConfirmSpeakerRequest, room: GameRoom = Depends(
         total_score = claim_result["total_score"]
     else:
         # Fallback: Just award points if round was already claimed or missing
-        total_score = game.add_score(body.actual_player_id, body.points)
+        total_score = game.add_score(body.player_id, body.points)
         sample_count = player.sample_count
         message = f"Points (+{body.points}) awarded to '{player.name}'."
 
@@ -145,7 +145,7 @@ async def confirm_speaker(body: ConfirmSpeakerRequest, room: GameRoom = Depends(
     )
 
 
-@router.post("/mimic-challenge", response_model=MimicChallengeResponse)
+@router.post("/mimic-challenge", response_model=MimicResponse)
 async def mimic_challenge(
     request: Request,
     target_player_id: str = Form(..., description="ID of player to impersonate"),
@@ -186,7 +186,7 @@ async def mimic_challenge(
         match_threshold=match_threshold,
     )
 
-    return MimicChallengeResponse(
+    return MimicResponse(
         target_player_id=eval_result.target_player_id,
         target_name=eval_result.target_name,
         similarity_score=round(eval_result.similarity_score, 4),

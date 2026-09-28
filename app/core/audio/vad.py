@@ -34,10 +34,8 @@ class SileroVAD:
                 f"Please run scripts/download_models.py."
             )
 
-        sess_options = ort.SessionOptions()
-        sess_options.intra_op_num_threads = num_threads
-        sess_options.inter_op_num_threads = 1
-        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        from .utils import make_session_options
+        sess_options = make_session_options(num_threads)
 
         self.session = ort.InferenceSession(
             str(self.model_path), sess_options, providers=["CPUExecutionProvider"]
@@ -59,7 +57,7 @@ class SileroVAD:
             self._h = np.zeros((2, batch_size, 64), dtype=np.float32)
             self._c = np.zeros((2, batch_size, 64), dtype=np.float32)
 
-    def _infer_frame(self, chunk: np.ndarray) -> float:
+    def infer(self, chunk: np.ndarray) -> float:
         """Run single 512-sample frame through ONNX VAD."""
         # Ensure chunk has shape (1, 512)
         chunk_in = chunk.reshape(1, -1).astype(np.float32)
@@ -126,7 +124,7 @@ class SileroVAD:
             chunk = audio[i : i + window_size]
             if len(chunk) < window_size:
                 chunk = np.pad(chunk, (0, window_size - len(chunk)))
-            prob = self._infer_frame(chunk)
+            prob = self.infer(chunk)
             speech_probs.append(prob)
 
         # Stateful hysteresis: trigger on >= th, untrigger only after min_silence_samples < neg_th

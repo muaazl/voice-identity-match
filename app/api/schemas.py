@@ -59,7 +59,7 @@ class AudioMetricsResponse(BaseModel):
     speech_ratio: float
 
 
-class GuessWhoResponse(BaseModel):
+class IdentifyResponse(BaseModel):
     round_id: str
     predicted_player_id: Optional[str]
     predicted_name: Optional[str]
@@ -76,7 +76,7 @@ class GuessWhoResponse(BaseModel):
 # Mode A: Confirm / Claim Speaker
 # -------------------------------------------------------------
 class ConfirmSpeakerRequest(BaseModel):
-    actual_player_id: str
+    player_id: str
     round_id: Optional[str] = None
     points: int = Field(default=50, ge=0, le=500)
 
@@ -93,7 +93,7 @@ class ConfirmSpeakerResponse(BaseModel):
 # -------------------------------------------------------------
 # Mode B: Impostor Challenge
 # -------------------------------------------------------------
-class MimicChallengeResponse(BaseModel):
+class MimicResponse(BaseModel):
     target_player_id: str
     target_name: str
     similarity_score: float

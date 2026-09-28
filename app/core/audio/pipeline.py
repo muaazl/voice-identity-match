@@ -14,7 +14,7 @@ from scipy.signal import resample_poly
 
 from .denoiser import DTLNDenoiser
 from .vad import SileroVAD
-from .encoder import CAMPPEncoder
+from .encoder import CamPPEncoder
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class AudioPipeline:
             threshold=vad_threshold,
             num_threads=num_threads,
         )
-        self.encoder = CAMPPEncoder(
+        self.encoder = CamPPEncoder(
             model_path=models_path / "campplus.onnx",
             num_threads=num_threads,
         )
@@ -105,18 +105,19 @@ class AudioPipeline:
         Combines the full-utterance embedding with overlapping sub-segment embeddings
         to construct a more invariant, noise-resilient speaker centroid.
         """
-        full_emb = self.encoder.extract_embedding(speech_audio)
         win_samples = int(window_sec * self.SAMPLE_RATE)
         hop_samples = int(hop_sec * self.SAMPLE_RATE)
 
         if len(speech_audio) < int(3.5 * self.SAMPLE_RATE):
-            return full_emb
+            return self.encoder.extract_embedding(speech_audio)
 
-        embeddings = [full_emb]
+        embeddings = []
         for start in range(0, len(speech_audio) - win_samples + 1, hop_samples):
             chunk = speech_audio[start : start + win_samples]
-            chunk_emb = self.encoder.extract_embedding(chunk)
-            embeddings.append(chunk_emb)
+            embeddings.append(self.encoder.extract_embedding(chunk))
+
+        if not embeddings:
+            return self.encoder.extract_embedding(speech_audio)
 
         avg_emb = np.mean(embeddings, axis=0)
         norm = np.linalg.norm(avg_emb)

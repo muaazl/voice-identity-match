@@ -55,9 +55,14 @@ class RoundCache:
     def pop(self, round_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve and remove a round from the cache."""
         with self._lock:
-            entry = self.get(round_id)
-            if entry and round_id in self._cache:
-                del self._cache[round_id]
+            entry = self._cache.get(round_id)
+            if not entry:
+                return None
+            
+            del self._cache[round_id]
+
+            if time.time() - entry["created_at"] > self._ttl_seconds:
+                return None
             return entry
 
     def count(self) -> int:

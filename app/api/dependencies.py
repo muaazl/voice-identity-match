@@ -9,6 +9,13 @@ from fastapi import Request, Header, Query, HTTPException
 from app.core.engine.room import GameRoom, RoomManager
 
 
+def get_room_manager(request: Request) -> RoomManager:
+    manager = getattr(request.app.state, "room_manager", None)
+    if not manager:
+        raise HTTPException(status_code=500, detail="Room manager not initialized on server.")
+    return manager
+
+
 async def get_room(
     request: Request,
     x_room_code: Optional[str] = Header(None, alias="X-Room-Code"),
@@ -21,9 +28,7 @@ async def get_room(
     2. Query Parameter '?room=...'
     3. Fallback to 'DEFAULT'
     """
-    room_manager: RoomManager = getattr(request.app.state, "room_manager", None)
-    if not room_manager:
-        raise HTTPException(status_code=500, detail="Room manager not initialized on server.")
+    room_manager = get_room_manager(request)
 
     # Determine requested room code
     code = (x_room_code or room or "DEFAULT").strip().upper()

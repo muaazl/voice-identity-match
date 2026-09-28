@@ -24,7 +24,7 @@ The engine is built for low-latency CPU execution and evaluates voice samples th
 ```bash
 # Create and activate a virtual environment
 python -m venv .venv
-.venv\Scripts\activate
+.\venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt

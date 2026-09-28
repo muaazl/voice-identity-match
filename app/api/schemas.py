@@ -23,9 +23,15 @@ class PlayerRegisterResponse(BaseModel):
 # -------------------------------------------------------------
 # Stateless Audio Embedding Extraction
 # -------------------------------------------------------------
+class AudioMetricsResponse(BaseModel):
+    raw_duration_sec: float
+    speech_duration_sec: float
+    speech_ratio: float
+
+
 class AudioEmbedResponse(BaseModel):
     embedding: List[float]
-    audio_metrics: "AudioMetricsResponse"
+    audio_metrics: AudioMetricsResponse
     status: str = "success"
 
 
@@ -52,11 +58,6 @@ class CandidateMatchResponse(BaseModel):
     similarity_percent: float
     probability_percent: Optional[float] = None
 
-
-class AudioMetricsResponse(BaseModel):
-    raw_duration_sec: float
-    speech_duration_sec: float
-    speech_ratio: float
 
 
 class IdentifyResponse(BaseModel):

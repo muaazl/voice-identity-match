@@ -1,42 +1,35 @@
 """
 In-Memory Thread-Safe Biometric Vector Registry.
-Maintains enrolled player speaker centroids, calculates cosine similarity,
+Maintains enrolled identity speaker centroids, calculates cosine similarity,
 and updates speaker profiles via Exponential Moving Average (EMA).
 """
 
 import threading
 import logging
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple
 import numpy as np
 
-from .models import PlayerProfile
+from .models import IdentityProfile
 from .utils import _normalize_vector
 
 logger = logging.getLogger(__name__)
+
 class VectorRegistry:
-    """Thread-safe in-memory storage for player centroids and similarity computation."""
+    """Thread-safe in-memory storage for identity centroids and similarity computation."""
 
     def __init__(self, embedding_dim: int = 192):
         self._lock = threading.RLock()
         self._embedding_dim = embedding_dim
-        # Stored internally as dictionary of PlayerProfile
-        self._players: Dict[str, PlayerProfile] = {}
+        # Stored internally as dictionary of IdentityProfile
+        self._identities: Dict[str, IdentityProfile] = {}
         self._matrix_cache: Optional[Tuple[List[str], np.ndarray]] = None
 
     def _invalidate_cache(self):
         self._matrix_cache = None
 
-    def register_player(self, player_id: str, name: str, embedding: np.ndarray) -> PlayerProfile:
+    def register_identity(self, identity_id: str, name: str, embedding: np.ndarray) -> IdentityProfile:
         """
-        Enroll a new player with their initial unit-normalized speaker centroid.
-
-        Args:
-            player_id: Unique string identifier for player.
-            name: Display name.
-            embedding: 1D array of speaker embedding.
-
-        Returns:
-            Enrolled PlayerProfile.
+        Enroll a new identity with their initial unit-normalized speaker centroid.
         """
         normalized_centroid = _normalize_vector(embedding)
         if len(normalized_centroid) != self._embedding_dim:
@@ -45,79 +38,63 @@ class VectorRegistry:
             )
 
         with self._lock:
-            existing = self._players.get(player_id)
+            existing = self._identities.get(identity_id)
             if existing:
                 existing.name = name
                 existing.centroid = normalized_centroid
                 existing.sample_count = 1
                 profile = existing
             else:
-                profile = PlayerProfile(
-                    player_id=player_id,
+                profile = IdentityProfile(
+                    identity_id=identity_id,
                     name=name,
                     centroid=normalized_centroid,
                     sample_count=1,
-                    score=0,
                 )
-                self._players[player_id] = profile
+                self._identities[identity_id] = profile
 
             self._invalidate_cache()
-            logger.info(f"Registered player '{name}' (ID: {player_id})")
+            logger.info(f"Registered identity '{name}' (ID: {identity_id})")
             return profile
 
-    def get_player(self, player_id: str) -> Optional[PlayerProfile]:
-        """Retrieve player profile by ID."""
+    def get_identity(self, identity_id: str) -> Optional[IdentityProfile]:
+        """Retrieve identity profile by ID."""
         with self._lock:
-            return self._players.get(player_id)
+            return self._identities.get(identity_id)
 
-    def list_players(self) -> List[PlayerProfile]:
-        """List all enrolled player profiles."""
+    def list_identities(self) -> List[IdentityProfile]:
+        """List all enrolled identity profiles."""
         with self._lock:
-            return list(self._players.values())
+            return list(self._identities.values())
 
-    def remove_player(self, player_id: str) -> bool:
-        """Remove a player from registry."""
+    def remove_identity(self, identity_id: str) -> bool:
+        """Remove an identity from registry."""
         with self._lock:
-            if player_id in self._players:
-                del self._players[player_id]
+            if identity_id in self._identities:
+                del self._identities[identity_id]
                 self._invalidate_cache()
-                logger.info(f"Removed player ID: {player_id}")
+                logger.info(f"Removed identity ID: {identity_id}")
                 return True
             return False
 
     def count(self) -> int:
-        """Return total enrolled players."""
+        """Return total enrolled identities."""
         with self._lock:
-            return len(self._players)
+            return len(self._identities)
 
     @staticmethod
     def calculate_similarity(embedding_a: np.ndarray, embedding_b: np.ndarray) -> float:
-        """
-        Compute cosine similarity between two speaker vectors.
-        Since both are L2-normalized, cosine similarity equals the dot product.
-
-        Returns:
-            Cosine similarity float clipped to [-1.0, 1.0].
-        """
+        """Compute cosine similarity between two speaker vectors."""
         va = _normalize_vector(embedding_a)
         vb = _normalize_vector(embedding_b)
         sim = float(np.dot(va, vb))
         return max(-1.0, min(1.0, sim))
 
     def update_centroid(
-        self, player_id: str, new_embedding: np.ndarray, alpha: float = 0.85
+        self, identity_id: str, new_embedding: np.ndarray, alpha: float = 0.85
     ) -> np.ndarray:
         """
-        Update stored speaker centroid using Exponential Moving Average (EMA):
-            c_new = Normalize(alpha * c_old + (1 - alpha) * new_embedding)
-
-        Args:
-            player_id: ID of the player to update.
-            new_embedding: Verified new speech embedding.
-            alpha: Smoothing factor in [0.0, 1.0]. Default 0.85.
-
-        Returns:
-            The updated, unit-normalized centroid.
+        Update stored speaker centroid using Exponential Moving Average (EMA).
         """
         new_vec = _normalize_vector(new_embedding)
         if len(new_vec) != self._embedding_dim:
@@ -126,49 +103,45 @@ class VectorRegistry:
             )
 
         with self._lock:
-            player = self._players.get(player_id)
-            if not player:
-                raise KeyError(f"Player ID '{player_id}' not found in registry.")
+            identity = self._identities.get(identity_id)
+            if not identity:
+                raise KeyError(f"Identity ID '{identity_id}' not found in registry.")
 
             # Compute EMA
-            updated = alpha * player.centroid + (1.0 - alpha) * new_vec
+            updated = alpha * identity.centroid + (1.0 - alpha) * new_vec
             normalized_updated = _normalize_vector(updated)
 
-            player.centroid = normalized_updated
-            player.sample_count += 1
+            identity.centroid = normalized_updated
+            identity.sample_count += 1
             self._invalidate_cache()
 
             logger.info(
-                f"Updated centroid for '{player.name}' (ID: {player_id}, sample #{player.sample_count})"
+                f"Updated centroid for '{identity.name}' (ID: {identity_id}, sample #{identity.sample_count})"
             )
-            return player.centroid
+            return identity.centroid
 
     def get_matrix(self) -> Tuple[List[str], np.ndarray]:
         """
         Retrieve all enrolled centroids stacked into a single 2D matrix (N, D).
-        Enables vectorized 1-of-N cosine scoring via a single BLAS GEMV call.
-
-        Returns:
-            Tuple of (list_of_player_ids, matrix_of_centroids).
         """
         with self._lock:
             if self._matrix_cache is not None:
                 return self._matrix_cache
 
-            if not self._players:
+            if not self._identities:
                 self._matrix_cache = ([], np.empty((0, self._embedding_dim), dtype=np.float32))
                 return self._matrix_cache
 
-            player_ids = list(self._players.keys())
-            matrix = np.stack([self._players[pid].centroid for pid in player_ids]).astype(
+            identity_ids = list(self._identities.keys())
+            matrix = np.stack([self._identities[pid].centroid for pid in identity_ids]).astype(
                 np.float32
             )
-            self._matrix_cache = (player_ids, matrix)
+            self._matrix_cache = (identity_ids, matrix)
             return self._matrix_cache
 
     def reset(self) -> None:
-        """Clear all enrolled players."""
+        """Clear all enrolled identities."""
         with self._lock:
-            self._players.clear()
+            self._identities.clear()
             self._invalidate_cache()
-            logger.info("VectorRegistry reset: all players cleared.")
+            logger.info("VectorRegistry reset: all identities cleared.")

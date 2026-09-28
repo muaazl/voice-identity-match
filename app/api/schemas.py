@@ -1,5 +1,5 @@
 """
-Pydantic Request and Response Schemas for VoiceMimic API.
+Pydantic Request and Response Schemas for VoiceGate API.
 """
 
 from typing import List, Optional, Dict, Any
@@ -7,13 +7,12 @@ from pydantic import BaseModel, Field
 
 
 # -------------------------------------------------------------
-# Player Registration
+# Identity Enrollment
 # -------------------------------------------------------------
-class PlayerRegisterResponse(BaseModel):
-    player_id: str
+class IdentityEnrollResponse(BaseModel):
+    identity_id: str
     name: str
     sample_count: int
-    score: int
     audio_duration_sec: float
     speech_duration_sec: float
     message: str
@@ -35,101 +34,38 @@ class AudioEmbedResponse(BaseModel):
     status: str = "success"
 
 
-
-class PlayerItem(BaseModel):
-    player_id: str
+class IdentityItem(BaseModel):
+    identity_id: str
     name: str
     sample_count: int
-    score: int
 
 
-class PlayerListResponse(BaseModel):
-    players: List[PlayerItem]
+class IdentityListResponse(BaseModel):
+    identities: List[IdentityItem]
     total: int
 
 
 # -------------------------------------------------------------
-# Mode A: Guess-Who (Blind Identifier)
+# Verification (1:1 and 1:N)
 # -------------------------------------------------------------
 class CandidateMatchResponse(BaseModel):
-    player_id: str
+    identity_id: str
     name: str
     similarity: float
     similarity_percent: float
     probability_percent: Optional[float] = None
 
 
-
-class IdentifyResponse(BaseModel):
-    round_id: str
-    predicted_player_id: Optional[str]
-    predicted_name: Optional[str]
+class VerifyResponse(BaseModel):
+    verdict: str
+    identity_id: Optional[str]
+    name: Optional[str]
     confidence: float
     confidence_percent: float
     is_certain: bool
-    needs_confirmation: bool
     margin: float
     rankings: List[CandidateMatchResponse]
     audio_metrics: AudioMetricsResponse
-
-
-# -------------------------------------------------------------
-# Mode A: Confirm / Claim Speaker
-# -------------------------------------------------------------
-class ConfirmSpeakerRequest(BaseModel):
-    player_id: str
-    round_id: Optional[str] = None
-    points: int = Field(default=50, ge=0, le=500)
-
-
-class ConfirmSpeakerResponse(BaseModel):
-    player_id: str
-    name: str
-    points_awarded: int
-    total_score: int
-    sample_count: int
-    message: str
-
-
-# -------------------------------------------------------------
-# Mode B: Impostor Challenge
-# -------------------------------------------------------------
-class MimicResponse(BaseModel):
-    target_player_id: str
-    target_name: str
-    similarity_score: float
-    similarity_percent: float
-    status: str  # "SYSTEM_FOOLED" | "CLOSE_MIMIC" | "POOR_ATTEMPT"
-    message: str
-    points: int
-    security_breached: bool
-    thresholds: Dict[str, float]
-
-
-# -------------------------------------------------------------
-# Scoreboard & Administration
-# -------------------------------------------------------------
-class ScoreboardEntry(BaseModel):
-    player_id: str
-    name: str
-    score: int
-    sample_count: int
-
-
-class ScoreboardResponse(BaseModel):
-    players: List[ScoreboardEntry]
-    total_players: int
-    active_rounds: int
-
-
-class ResetRequest(BaseModel):
-    reset_scores_only: bool = False
-
-
-class ResetResponse(BaseModel):
-    message: str
-    reset_scores_only: bool
-    total_players: int
 
 
 # -------------------------------------------------------------
@@ -139,28 +75,25 @@ class HealthResponse(BaseModel):
     status: str
     models_loaded: bool
     embedding_dim: int
-    enrolled_players: int
-    active_rounds: int
+    enrolled_identities: int
 
 
 # -------------------------------------------------------------
-# Room & Session Management
+# Session Management
 # -------------------------------------------------------------
-class RoomCreateRequest(BaseModel):
-    room_code: Optional[str] = None
+class SessionCreateRequest(BaseModel):
+    session_id: Optional[str] = None
 
 
-class RoomCreateResponse(BaseModel):
-    room_code: str
+class SessionCreateResponse(BaseModel):
+    session_id: str
     created_at: float
     message: str
 
 
-class RoomStatusResponse(BaseModel):
-    room_code: str
+class SessionStatusResponse(BaseModel):
+    session_id: str
     exists: bool
-    player_count: int
-    active_rounds: int
+    identity_count: int
     created_at: Optional[float] = None
     last_active_at: Optional[float] = None
-

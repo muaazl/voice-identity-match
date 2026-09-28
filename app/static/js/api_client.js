@@ -1,6 +1,6 @@
 /**
- * VoiceMimic REST API Client.
- * Connects the frontend to stateless FastAPI backend endpoints.
+ * VoiceGate REST API Client.
+ * Connects the frontend to FastAPI backend endpoints.
  */
 
 class ApiClient {
@@ -14,43 +14,62 @@ class ApiClient {
         return res.json();
     }
 
-    /**
-     * Stateless Audio Feature Extraction.
-     * Takes raw audio bytes, executes DTLN + Silero VAD + CAM++ on server,
-     * and returns the 192-D embedding vector and acoustic metrics.
-     */
-    async extractEmbedding(audioBlob) {
-        const formData = new FormData();
-        formData.append('file', audioBlob, 'audio_sample.wav');
+    async createSession() {
+        const res = await fetch(`${this.baseUrl}/api/sessions/create`, { method: 'POST' });
+        if (!res.ok) throw new Error(`Session creation failed: ${res.statusText}`);
+        return res.json();
+    }
 
-        const res = await fetch(`${this.baseUrl}/api/audio/embed`, {
+    async enrollIdentity(name, audioBlob, sessionId) {
+        const formData = new FormData();
+        formData.append('name', name);
+        formData.append('file', audioBlob, `${name.replace(/\s+/g, '_')}_enroll.wav`);
+
+        const res = await fetch(`${this.baseUrl}/api/identities/enroll`, {
             method: 'POST',
             body: formData,
+            headers: { 'X-Session-ID': sessionId }
         });
-
         if (!res.ok) {
             const err = await res.json().catch(() => ({ detail: res.statusText }));
-            throw new Error(err.detail || 'Audio embedding extraction failed');
+            throw new Error(err.detail || 'Enrollment failed');
         }
         return res.json();
     }
 
-    /**
-     * Backward-compatible registration endpoint.
-     */
-    async registerPlayer(playerName, audioBlob) {
+    async verifySpeaker(audioBlob, sessionId, identityId = null) {
         const formData = new FormData();
-        formData.append('player_name', playerName);
-        formData.append('file', audioBlob, `${playerName.replace(/\s+/g, '_')}_reg.wav`);
+        formData.append('file', audioBlob, 'verify.wav');
+        if (identityId) {
+            formData.append('identity_id', identityId);
+        }
 
-        const res = await fetch(`${this.baseUrl}/api/players/register`, {
+        const res = await fetch(`${this.baseUrl}/api/verify`, {
             method: 'POST',
             body: formData,
+            headers: { 'X-Session-ID': sessionId }
         });
         if (!res.ok) {
             const err = await res.json().catch(() => ({ detail: res.statusText }));
-            throw new Error(err.detail || 'Registration failed');
+            throw new Error(err.detail || 'Verification failed');
         }
+        return res.json();
+    }
+    
+    async getIdentities(sessionId) {
+        const res = await fetch(`${this.baseUrl}/api/identities`, {
+            headers: { 'X-Session-ID': sessionId }
+        });
+        if (!res.ok) throw new Error(`Failed to fetch identities`);
+        return res.json();
+    }
+
+    async deleteIdentity(identityId, sessionId) {
+        const res = await fetch(`${this.baseUrl}/api/identities/${identityId}`, {
+            method: 'DELETE',
+            headers: { 'X-Session-ID': sessionId }
+        });
+        if (!res.ok) throw new Error(`Failed to delete identity`);
         return res.json();
     }
 }

@@ -1,5 +1,5 @@
 """
-VoiceMimic FastAPI Application Entrypoint.
+VoiceGate FastAPI Application Entrypoint.
 Serves REST and WebSocket endpoints for real-time voice biometrics.
 Optimized for low-latency CPU execution via ONNX Runtime.
 """
@@ -17,10 +17,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.core.audio.pipeline import AudioPipeline
-from app.core.engine.room import RoomManager
-from app.api.routes_players import router as players_router
-from app.api.routes_game import router as game_router
-from app.api.routes_rooms import router as rooms_router
+from app.core.engine.session import SessionManager
+from app.api.routes_identities import router as identities_router
+from app.api.routes_verify import router as verify_router
+from app.api.routes_sessions import router as sessions_router
 from app.api.routes_audio import router as audio_router
 from app.api.routes_ws import router as ws_router
 from app.api.schemas import HealthResponse
@@ -37,10 +37,10 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Lifespan context manager: Pre-loads ONNX models, initializes the room manager
+    Lifespan context manager: Pre-loads ONNX models, initializes the session manager
     and engine subsystems, and runs an in-memory warm-up pass.
     """
-    logger.info("Initializing VoiceMimic Audio ML and Engine subsystems...")
+    logger.info("Initializing VoiceGate Audio ML and Engine subsystems...")
     models_dir = Path(settings.models_dir)
 
     # Ensure models are present (auto-downloads on first boot if missing)
@@ -57,14 +57,14 @@ async def lifespan(app: FastAPI):
         vad_threshold=settings.vad_threshold
     )
 
-    # 2. Initialize Multi-Room Session Orchestrator
-    app.state.room_manager = RoomManager(
-        default_room_code=settings.default_room_code, 
+    # 2. Initialize Multi-Tenant Session Orchestrator
+    app.state.session_manager = SessionManager(
+        default_session_id=settings.default_room_code, 
         embedding_dim=settings.embedding_dim
     )
 
-    # Prime default room
-    app.state.room_manager.get_or_create_room(settings.default_room_code)
+    # Prime default session
+    app.state.session_manager.get_or_create_session(settings.default_room_code)
 
     # 3. Model Warm-up Pass (Eliminates runtime cold-start JIT delay)
     logger.info("Executing model warm-up forward pass...")
@@ -75,17 +75,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Warm-up pass encountered an issue (non-fatal): {e}")
 
-    logger.info("VoiceMimic server is ready to accept biometric requests.")
+    logger.info("VoiceGate server is ready to accept biometric requests.")
     yield
-    logger.info("Shutting down VoiceMimic server...")
+    logger.info("Shutting down VoiceGate server...")
     if hasattr(app.state, "pipeline"):
         del app.state.pipeline
 
 
 # Create FastAPI application
 app = FastAPI(
-    title="VoiceMimic API",
-    description="Real-time Voice Biometric Party Game Engine",
+    title="VoiceGate API",
+    description="Real-time Voice Biometric Authentication Engine",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -103,9 +103,9 @@ app.add_middleware(
 
 # Include Routers
 app.include_router(audio_router)
-app.include_router(rooms_router)
-app.include_router(players_router)
-app.include_router(game_router)
+app.include_router(sessions_router)
+app.include_router(identities_router)
+app.include_router(verify_router)
 app.include_router(ws_router)
 
 
@@ -114,24 +114,21 @@ app.include_router(ws_router)
 async def health_check():
     """Service health and diagnostics endpoint."""
     pipeline_loaded = hasattr(app.state, "pipeline") and app.state.pipeline is not None
-    room_manager = getattr(app.state, "room_manager", None)
+    session_manager = getattr(app.state, "session_manager", None)
 
     enrolled = 0
-    active_rounds = 0
-    if room_manager:
-        # Aggregate across all active rooms
-        for room_code in room_manager.list_active_rooms():
-            room = room_manager.get_room(room_code)
-            if room:
-                enrolled += room.registry.count()
-                active_rounds += room.round_cache.count()
+    if session_manager:
+        # Aggregate across all active sessions
+        for session_id in session_manager.list_active_sessions():
+            session = session_manager.get_session(session_id)
+            if session:
+                enrolled += session.registry.count()
 
     return HealthResponse(
         status="healthy" if pipeline_loaded else "initializing",
         models_loaded=pipeline_loaded,
         embedding_dim=settings.embedding_dim,
-        enrolled_players=enrolled,
-        active_rounds=active_rounds,
+        enrolled_identities=enrolled,
     )
 
 
@@ -146,11 +143,11 @@ if static_dir.exists():
         index_file = static_dir / "index.html"
         if index_file.exists():
             return HTMLResponse(content=index_file.read_text(encoding="utf-8"))
-        return HTMLResponse("<h1>VoiceMimic Backend Online</h1>")
+        return HTMLResponse("<h1>VoiceGate Backend Online</h1>")
 else:
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     async def index_placeholder():
-        return "<h1>VoiceMimic Backend Online</h1>"
+        return "<h1>VoiceGate Backend Online</h1>"
 
 
 if __name__ == "__main__":

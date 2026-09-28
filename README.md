@@ -1,63 +1,45 @@
-# VoiceMimic
+# VoiceGate
 
-VoiceMimic is an interactive, real-time voice biometric party game powered by an optimized, PyTorch-free ONNX pipeline.
+A voice authentication API that uses biometric 1:1 or 1:N matching.
 
-## What it does
+## Features
 
-Players enroll their voice by recording a short audio clip, which the system uses to create a unique biometric profile. In "Blind Identifier" mode, players take turns speaking a hidden phrase, and the system attempts to correctly guess who is speaking. In "Impostor Challenge" mode, players try to fool the biometric security by mimicking another enrolled player's voice.
+1.  **Enrollment:** Takes a short audio clip and a name, and generates a biometric profile (192-D centroid vector).
+2.  **Verification:** Compares a voice sample against enrolled profiles to return a match verdict, confidence score, and ranking.
 
-## How it works
+## Pipeline
 
-The engine is built for low-latency CPU execution and evaluates voice samples through a 4-stage pipeline:
+The system evaluates audio through a 4-stage CPU-based pipeline:
+1.  **Noise Reduction:** DTLN model removes background noise.
+2.  **Voice Activity Detection:** Silero VAD strips silence.
+3.  **Feature Extraction:** Generates 80-dimensional log-mel filterbanks.
+4.  **Speaker Embedding:** CAM++ model extracts a 192-D vector, scored using cosine similarity.
 
-1. **Noise Reduction:** A causal DTLN model removes background noise and enhances speech.
-2. **Voice Activity Detection:** Silero VAD strips silence, pauses, and breath noises.
-3. **Feature Extraction:** 80-dimensional log-mel filterbanks are generated from the clean speech.
-4. **Speaker Embedding:** A CAM++ model extracts a 192-D unit-normalized biometric vector, which is then scored against the game's registry using vectorized cosine similarity.
+## Setup and Run
 
-## Quick Start
+Requires Python 3.10+.
 
-### Prerequisites
-- Python 3.10+
-
-### Setup and Run
 ```bash
-# Create and activate a virtual environment
 python -m venv .venv
 .\venv\Scripts\activate
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Download required ONNX models
 python scripts/download_models.py
-
-# Start the server
 python -m uvicorn app.main:app --host 0.0.0.0 --port 7860
 ```
-Open your browser to `http://localhost:7860`.
+Open `http://localhost:7860` for the web UI.
 
-## Deploy (Render Example)
+## API Endpoints
 
-Deploy easily on Render or any Python cloud host:
-- **Environment**: Python 3.10+
-- **Build Command**: `pip install -r requirements.txt && python scripts/download_models.py`
-- **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-
-## API Reference
+The API relies on `X-Session-ID` headers to group identities into isolated sessions.
 
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
-| `/api/health` | `GET` | Subsystem status and ONNX model readiness |
-| `/api/rooms/create` | `POST` | Creates a new isolated game room |
-| `/api/rooms/{room_code}/status`| `GET` | Retrieves the status of a specific room |
-| `/api/rooms` | `GET` | Lists all currently active rooms |
-| `/api/players/register` | `POST` | Registers a new player profile from an audio sample |
-| `/api/players` | `GET` | Lists all currently enrolled players |
-| `/api/players/{id}` | `DELETE` | Deletes a player from the registry |
-| `/api/game/guess-who` | `POST` | Mode A: 1-of-N speaker classification |
-| `/api/game/confirm-speaker` | `POST` | Mode A: Awards points and adaptively updates centroid via EMA |
-| `/api/game/mimic-challenge` | `POST` | Mode B: Evaluates impersonation vs target centroid |
-| `/api/game/scoreboard` | `GET` | Retrieves leaderboard sorted by points |
-| `/api/game/reset` | `POST` | Resets scores or completely clears game roster |
-| `/ws/stream-vad` | `WebSocket`| Real-time speech activity probability stream |
+| `/api/health` | `GET` | System health status |
+| `/api/sessions/create` | `POST` | Creates a new session |
+| `/api/sessions/{session_id}/status`| `GET` | Gets session status |
+| `/api/identities/enroll` | `POST` | Enrolls a new identity |
+| `/api/identities` | `GET` | Lists enrolled identities |
+| `/api/identities/{id}` | `DELETE` | Deletes an identity |
+| `/api/verify` | `POST` | Verifies a speaker (1:1 with `identity_id` or 1:N) |
+| `/api/audio/embed` | `POST` | Extracts a 192-D embedding from audio statelessly |
+| `/ws/stream-vad` | `WebSocket`| VAD stream |

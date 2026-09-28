@@ -1,23 +1,20 @@
-"""Engine package: Vector registry, scoring logic, and data models."""
+"""Engine package: Vector registry, verification logic, and data models."""
 
 from .models import (
-    PlayerProfile,
+    IdentityProfile,
     CandidateMatch,
-    IdentificationResult,
-    MimicResult,
+    VerificationResult,
 )
 from .registry import VectorRegistry
-from .game import GameEngine
-from .room import GameRoom, RoomManager
+from .verification import VerificationEngine
+from .session import AuthSession, SessionManager
 
 __all__ = [
-    "PlayerProfile",
+    "IdentityProfile",
     "CandidateMatch",
-    "IdentificationResult",
-    "MimicResult",
+    "VerificationResult",
     "VectorRegistry",
-    "GameEngine",
-    "GameRoom",
-    "RoomManager",
+    "VerificationEngine",
+    "AuthSession",
+    "SessionManager",
 ]
-

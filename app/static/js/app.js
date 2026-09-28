@@ -1,11 +1,10 @@
 /**
- * VoiceMimic SPA Controller & State Machine.
- * Device-local pass-and-play party game controller.
- * Roster and scores persist in localStorage; audio embeddings are processed statelessly by the backend.
+ * VoiceGate SPA Controller.
+ * Interacts with VoiceGate FastAPI backend.
  */
 
-document.addEventListener('DOMContentLoaded', () => {
-    const api = new ApiClient();
+document.addEventListener('DOMContentLoaded', async () => {
+    const api = new ApiClient('');
     const recorder = new AudioRecorder();
     const sounds = new SoundEffects();
 
@@ -13,45 +12,53 @@ document.addEventListener('DOMContentLoaded', () => {
     // App State
     // -------------------------------------------------------------
     const state = {
-        players: [],
-        activeMode: 'guess_who', // 'guess_who' | 'impostor'
+        identities: [],
         isRecording: false,
-        recordingType: null, // 'reg' | 'guess' | 'mimic'
-        currentRound: null,
+        recordingType: null, // 'enroll' | 'verify'
+        sessionId: localStorage.getItem('voicegate_session_id'),
     };
 
     // -------------------------------------------------------------
-    // Suggested Speech Prompts (Calibrated for ~10 seconds of speech: 22-25 words)
+    // Session Init
+    // -------------------------------------------------------------
+    async function initSession() {
+        try {
+            if (!state.sessionId) {
+                const res = await api.createSession();
+                state.sessionId = res.session_id;
+                localStorage.setItem('voicegate_session_id', state.sessionId);
+            }
+            await refreshIdentities();
+        } catch (err) {
+            console.error("Session init failed", err);
+            // Fallback to DEFAULT
+            state.sessionId = 'DEFAULT';
+            localStorage.setItem('voicegate_session_id', 'DEFAULT');
+            await refreshIdentities();
+        }
+    }
+
+    // -------------------------------------------------------------
+    // Suggested Speech Prompts
     // -------------------------------------------------------------
     const SUGGESTED_PHRASES = [
-        "The quick brown fox jumped over the lazy sleeping dogs while the bright morning sun began to warm up the quiet forest trail.",
-        "My unique voiceprint serves as my biometric passport today, allowing the neural network to analyze my natural tone, pitch, and acoustic cadence accurately.",
-        "Artificial intelligence listens closely to every harmonic frequency in human speech to distinguish between genuine friends and clever impostors in this biometric game.",
+        "My unique voiceprint serves as my biometric passport today, allowing the neural network to analyze my natural tone.",
+        "Artificial intelligence listens closely to every harmonic frequency in human speech to distinguish between genuine users and clever impostors.",
         "Sphinx of black quartz, please judge my vocal vow as I speak clearly into the microphone so the machine learns my voice.",
-        "To travel across galaxies and explore uncharted stars, we must first master the art of clear communication and learn to trust each other.",
-        "Every great mystery begins with a quiet whisper in the shadows, waiting for someone perceptive enough to uncover the hidden truth beneath.",
-        "When the cool autumn wind sweeps through the golden valley, old memories return of warm campfires, laughter, and stories shared among lifelong friends.",
-        "Technology evolves at incredible speed, yet nothing is more captivating than how unique frequencies of sound can identify who is speaking without seeing them."
+        "To travel across galaxies and explore uncharted stars, we must first master the art of clear communication.",
+        "Every great mystery begins with a quiet whisper in the shadows, waiting for someone perceptive enough to uncover the hidden truth.",
+        "When the cool autumn wind sweeps through the golden valley, old memories return of warm campfires, laughter, and stories shared."
     ];
     let phraseIndex = 0;
 
     // -------------------------------------------------------------
     // DOM Elements
     // -------------------------------------------------------------
-    // Header
     const enrolledCountEl = document.getElementById('enrolled-count');
     const btnToggleSound = document.getElementById('btn-toggle-sound');
     const btnOpenGuide = document.getElementById('btn-open-guide');
-    const btnOpenLeaderboard = document.getElementById('btn-open-leaderboard');
     const btnOpenReset = document.getElementById('btn-open-reset');
 
-    // Segmented Mode Switch
-    const tabGuessWho = document.getElementById('tab-guess-who');
-    const tabImpostor = document.getElementById('tab-impostor');
-    const sectionGuessWho = document.getElementById('section-guess-who');
-    const sectionImpostor = document.getElementById('section-impostor');
-
-    // Registration & Suggested Phrase
     const inputPlayerName = document.getElementById('input-player-name');
     const btnRecordReg = document.getElementById('btn-record-reg');
     const textRecordReg = document.getElementById('text-record-reg');
@@ -60,45 +67,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const rosterEmptyEl = document.getElementById('roster-empty');
     const rosterChipsEl = document.getElementById('roster-chips');
 
-    // Arena: Guess Who
-    const btnRecordGuess = document.getElementById('btn-record-guess');
-    const textRecordGuess = document.getElementById('text-record-guess');
-    const canvasGuess = document.getElementById('canvas-guess-waveform');
-    const cardGuessResult = document.getElementById('card-guess-result');
-    const textPredictedName = document.getElementById('text-predicted-name');
+    const selectVerifyTarget = document.getElementById('select-verify-target');
+    const btnRecordVerify = document.getElementById('btn-record-verify');
+    const textRecordVerify = document.getElementById('text-record-verify');
+    const canvasVerify = document.getElementById('canvas-verify-waveform');
+    
+    const cardVerifyResult = document.getElementById('card-verify-result');
+    const textVerdict = document.getElementById('text-verdict');
     const textMatchConfidence = document.getElementById('text-match-confidence');
     const textMatchMargin = document.getElementById('text-match-margin');
-    const guessRankingsList = document.getElementById('guess-rankings-list');
-    const btnGuessCorrect = document.getElementById('btn-guess-correct');
-    const btnGuessWrong = document.getElementById('btn-guess-wrong');
+    const verifyRankingsList = document.getElementById('verify-rankings-list');
 
-    // Arena: Impostor Challenge
-    const selectImpostorTarget = document.getElementById('select-impostor-target');
-    const btnRecordMimic = document.getElementById('btn-record-mimic');
-    const textRecordMimic = document.getElementById('text-record-mimic');
-    const canvasMimic = document.getElementById('canvas-mimic-waveform');
-    const cardMimicResult = document.getElementById('card-mimic-result');
-    const textMimicVerdict = document.getElementById('text-mimic-verdict');
-    const textMimicPoints = document.getElementById('text-mimic-points');
-    const textMimicScore = document.getElementById('text-mimic-score');
-    const barMimicProgress = document.getElementById('bar-mimic-progress');
-
-    // Modals
     const modalGuide = document.getElementById('modal-guide');
     const btnCloseGuide = document.getElementById('btn-close-guide');
     const btnGuideGotIt = document.getElementById('btn-guide-got-it');
 
-    const modalLeaderboard = document.getElementById('modal-leaderboard');
-    const btnCloseLeaderboard = document.getElementById('btn-close-leaderboard');
-    const leaderboardList = document.getElementById('leaderboard-list');
-
-    const modalWrongSpeaker = document.getElementById('modal-wrong-speaker');
-    const btnCloseWrongSpeaker = document.getElementById('btn-close-wrong-speaker');
-    const speakerSelectList = document.getElementById('speaker-select-list');
-
     const modalReset = document.getElementById('modal-reset');
     const btnCloseReset = document.getElementById('btn-close-reset');
-    const btnConfirmResetScores = document.getElementById('btn-confirm-reset-scores');
     const btnConfirmResetAll = document.getElementById('btn-confirm-reset-all');
 
     const toastContainer = document.getElementById('toast-container');
@@ -138,29 +123,6 @@ document.addEventListener('DOMContentLoaded', () => {
     updateSoundBtn();
 
     // -------------------------------------------------------------
-    // Segmented Mode Switching
-    // -------------------------------------------------------------
-    function switchMode(mode) {
-        sounds.click();
-        state.activeMode = mode;
-        if (mode === 'guess_who') {
-            tabGuessWho.classList.add('active');
-            tabImpostor.classList.remove('active');
-            sectionGuessWho.classList.remove('hidden');
-            sectionImpostor.classList.add('hidden');
-        } else {
-            tabImpostor.classList.add('active');
-            tabGuessWho.classList.remove('active');
-            sectionImpostor.classList.remove('hidden');
-            sectionGuessWho.classList.add('hidden');
-            updateTargetDropdown();
-        }
-    }
-
-    tabGuessWho.addEventListener('click', () => switchMode('guess_who'));
-    tabImpostor.addEventListener('click', () => switchMode('impostor'));
-
-    // -------------------------------------------------------------
     // Suggested Speech Phrase Shuffle
     // -------------------------------------------------------------
     btnShufflePhrase.addEventListener('click', () => {
@@ -170,18 +132,24 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // -------------------------------------------------------------
-    // Local Roster Management
+    // Identities Management
     // -------------------------------------------------------------
-    function refreshRoster() {
-        state.players = LocalEngine.LocalRoster.getPlayers();
-        renderRoster();
-        updateTargetDropdown();
-        enrolledCountEl.innerText = state.players.length === 1 ? '1 Player' : `${state.players.length} Players`;
+    async function refreshIdentities() {
+        try {
+            const res = await api.getIdentities(state.sessionId);
+            state.identities = res.identities;
+            renderIdentities();
+            updateTargetDropdown();
+            enrolledCountEl.innerText = state.identities.length === 1 ? '1 Identity' : `${state.identities.length} Identities`;
+        } catch (err) {
+            console.error(err);
+            showToast("Failed to fetch identities");
+        }
     }
 
-    function renderRoster() {
+    function renderIdentities() {
         rosterChipsEl.innerHTML = '';
-        if (state.players.length === 0) {
+        if (state.identities.length === 0) {
             rosterEmptyEl.classList.remove('hidden');
             rosterChipsEl.classList.add('hidden');
             return;
@@ -190,7 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
         rosterEmptyEl.classList.add('hidden');
         rosterChipsEl.classList.remove('hidden');
 
-        state.players.forEach((p) => {
+        state.identities.forEach((p) => {
             const chip = document.createElement('div');
             chip.className = 'player-chip';
 
@@ -198,58 +166,57 @@ document.addEventListener('DOMContentLoaded', () => {
             name.className = 'player-chip-name';
             name.innerText = p.name;
 
-            const score = document.createElement('span');
-            score.className = 'player-chip-score';
-            score.innerText = `${p.score} pts`;
-
             const del = document.createElement('button');
             del.className = 'player-chip-del';
             del.title = `Delete ${p.name}`;
             del.innerHTML = '&times;';
-            del.addEventListener('click', (e) => {
+            del.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 sounds.click();
-                LocalEngine.LocalRoster.removePlayer(p.player_id);
-                showToast(`Removed '${p.name}'`);
-                refreshRoster();
+                try {
+                    await api.deleteIdentity(p.identity_id, state.sessionId);
+                    showToast(`Removed '${p.name}'`);
+                    await refreshIdentities();
+                } catch (err) {
+                    showToast("Failed to delete identity");
+                }
             });
 
             chip.appendChild(name);
-            chip.appendChild(score);
             chip.appendChild(del);
             rosterChipsEl.appendChild(chip);
         });
     }
 
     function updateTargetDropdown() {
-        const val = selectImpostorTarget.value;
-        selectImpostorTarget.innerHTML = '<option value="">Select target player...</option>';
-        state.players.forEach((p) => {
+        const val = selectVerifyTarget.value;
+        selectVerifyTarget.innerHTML = '<option value="">Any Identity (1:N)</option>';
+        state.identities.forEach((p) => {
             const opt = document.createElement('option');
-            opt.value = p.player_id;
+            opt.value = p.identity_id;
             opt.innerText = p.name;
-            selectImpostorTarget.appendChild(opt);
+            selectVerifyTarget.appendChild(opt);
         });
-        if (val && state.players.some((p) => p.player_id === val)) {
-            selectImpostorTarget.value = val;
+        if (val && state.identities.some((p) => p.identity_id === val)) {
+            selectVerifyTarget.value = val;
         }
     }
 
     // -------------------------------------------------------------
-    // Recording: Player Registration
+    // Recording: Enroll Identity
     // -------------------------------------------------------------
-    let regTimer = null;
+    let enrollTimer = null;
 
     btnRecordReg.addEventListener('click', async () => {
         const name = inputPlayerName.value.trim();
         if (!name) {
-            showToast('Enter player name first');
+            showToast('Enter name first');
             inputPlayerName.focus();
             return;
         }
 
         if (state.isRecording) {
-            await finishRegistration(name);
+            await finishEnrollment(name);
             return;
         }
 
@@ -257,20 +224,20 @@ document.addEventListener('DOMContentLoaded', () => {
             await recorder.start();
             sounds.recordStart();
             state.isRecording = true;
-            state.recordingType = 'reg';
+            state.recordingType = 'enroll';
 
             btnRecordReg.classList.add('recording');
             textRecordReg.innerText = 'Recording (10s)...';
 
             let timeLeft = 10;
-            regTimer = setInterval(async () => {
+            enrollTimer = setInterval(async () => {
                 timeLeft--;
                 if (timeLeft > 0) {
                     sounds.tick();
                     textRecordReg.innerText = `Recording (${timeLeft}s)...`;
                 } else {
-                    clearInterval(regTimer);
-                    await finishRegistration(name);
+                    clearInterval(enrollTimer);
+                    await finishEnrollment(name);
                 }
             }, 1000);
         } catch (err) {
@@ -278,10 +245,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    async function finishRegistration(name) {
-        if (regTimer) {
-            clearInterval(regTimer);
-            regTimer = null;
+    async function finishEnrollment(name) {
+        if (enrollTimer) {
+            clearInterval(enrollTimer);
+            enrollTimer = null;
         }
 
         sounds.recordStop();
@@ -294,55 +261,52 @@ document.addEventListener('DOMContentLoaded', () => {
             state.recordingType = null;
             if (!blob) return;
 
-            // Extract biometric embedding vector from server
-            const res = await api.extractEmbedding(blob);
-            // Save player locally in browser localStorage
-            const player = LocalEngine.LocalRoster.addPlayer(name, res.embedding);
+            await api.enrollIdentity(name, blob, state.sessionId);
 
             sounds.successChime();
-            showToast(`'${player.name}' registered!`);
+            showToast(`'${name}' enrolled!`);
             inputPlayerName.value = '';
-            refreshRoster();
+            await refreshIdentities();
         } catch (err) {
             sounds.failureTone();
-            showToast(err.message || 'Registration failed');
+            showToast(err.message || 'Enrollment failed');
         } finally {
             textRecordReg.innerText = 'Record Sample';
         }
     }
 
     // -------------------------------------------------------------
-    // Recording: Mode A (Guess Who)
+    // Recording: Verify Speaker
     // -------------------------------------------------------------
-    btnRecordGuess.addEventListener('click', async () => {
-        if (state.players.length === 0) {
-            showToast('Register at least 1 player first');
+    btnRecordVerify.addEventListener('click', async () => {
+        if (state.identities.length === 0) {
+            showToast('Enroll at least 1 identity first');
             return;
         }
 
         if (state.isRecording) {
-            await finishGuessWho();
+            await finishVerify();
             return;
         }
 
         try {
-            await recorder.start(canvasGuess);
+            await recorder.start(canvasVerify);
             sounds.recordStart();
             state.isRecording = true;
-            state.recordingType = 'guess';
+            state.recordingType = 'verify';
 
-            cardGuessResult.classList.add('hidden');
-            btnRecordGuess.classList.add('recording');
-            textRecordGuess.innerText = 'Listening... (Tap to stop)';
+            cardVerifyResult.classList.add('hidden');
+            btnRecordVerify.classList.add('recording');
+            textRecordVerify.innerText = 'Listening... (Tap to stop)';
         } catch (err) {
             showToast('Microphone access denied');
         }
     });
 
-    async function finishGuessWho() {
+    async function finishVerify() {
         sounds.recordStop();
-        textRecordGuess.innerText = 'Analyzing...';
-        btnRecordGuess.classList.remove('recording');
+        textRecordVerify.innerText = 'Analyzing...';
+        btnRecordVerify.classList.remove('recording');
 
         try {
             const blob = await recorder.stop();
@@ -350,27 +314,28 @@ document.addEventListener('DOMContentLoaded', () => {
             state.recordingType = null;
             if (!blob) return;
 
-            // Extract embedding vector from audio
-            const audioData = await api.extractEmbedding(blob);
-            // Run client-side 1-of-N cosine similarity matching
-            const match = LocalEngine.identifySpeaker(audioData.embedding, state.players, 0.65);
+            const targetId = selectVerifyTarget.value || null;
+            const res = await api.verifySpeaker(blob, state.sessionId, targetId);
 
-            state.currentRound = {
-                embedding: audioData.embedding,
-                match: match,
-            };
+            textVerdict.innerText = res.verdict;
+            if (res.verdict === "MATCH") {
+                textVerdict.style.color = "var(--emerald)";
+                sounds.successChime();
+            } else if (res.verdict === "UNCERTAIN") {
+                textVerdict.style.color = "var(--amber)";
+                sounds.failureTone();
+            } else {
+                textVerdict.style.color = "var(--rose)";
+                sounds.failureTone();
+            }
 
-            textPredictedName.innerText = match.winner_name || 'No Match';
-            const confDisplay = match.top_probability_percent !== undefined
-                ? `${match.top_probability_percent}% Match`
-                : `${match.confidence_percent}% Match`;
-            textMatchConfidence.innerText = confDisplay;
-            textMatchMargin.innerText = match.is_certain ? 'High Margin' : (match.margin > 0.15 ? 'Moderate Margin' : 'Disputed');
+            textMatchConfidence.innerText = `${res.confidence_percent}% Score`;
+            textMatchMargin.innerText = res.is_certain ? 'High Margin' : 'Disputed / Low Margin';
 
             // Candidate breakdown
-            guessRankingsList.innerHTML = '';
-            if (match.rankings && match.rankings.length > 0) {
-                match.rankings.forEach((cand) => {
+            verifyRankingsList.innerHTML = '';
+            if (res.rankings && res.rankings.length > 0) {
+                res.rankings.forEach((cand) => {
                     const row = document.createElement('div');
                     row.className = 'ranking-row';
 
@@ -379,164 +344,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     const pct = document.createElement('span');
                     pct.style.fontWeight = '600';
-                    pct.style.color = cand.player_id === match.winner_player_id ? 'var(--accent)' : 'var(--text-muted)';
+                    pct.style.color = cand.identity_id === res.identity_id ? 'var(--accent)' : 'var(--text-muted)';
                     pct.innerText = cand.probability_percent !== undefined
                         ? `${cand.similarity_percent}% (${cand.probability_percent}% prob)`
                         : `${cand.similarity_percent}%`;
 
                     row.appendChild(name);
                     row.appendChild(pct);
-                    guessRankingsList.appendChild(row);
+                    verifyRankingsList.appendChild(row);
                 });
             }
 
-            if (match.confidence_percent >= 65) {
-                sounds.successChime();
-            } else {
-                sounds.failureTone();
-            }
-
-            cardGuessResult.classList.remove('hidden');
+            cardVerifyResult.classList.remove('hidden');
         } catch (err) {
             sounds.failureTone();
-            showToast(err.message || 'Analysis failed');
+            showToast(err.message || 'Verification failed');
         } finally {
-            textRecordGuess.innerText = 'Tap to Speak';
-        }
-    }
-
-    btnGuessCorrect.addEventListener('click', () => {
-        if (!state.currentRound || !state.currentRound.match || !state.currentRound.match.winner_player_id) return;
-        sounds.click();
-
-        const match = state.currentRound.match;
-        const updated = LocalEngine.LocalRoster.claimRound(match.winner_player_id, state.currentRound.embedding, 50);
-
-        if (updated) {
-            sounds.successChime();
-            showToast(`Correct! +50 pts to ${updated.name}`);
-        }
-        cardGuessResult.classList.add('hidden');
-        state.currentRound = null;
-        refreshRoster();
-    });
-
-    btnGuessWrong.addEventListener('click', () => {
-        if (!state.currentRound) return;
-        sounds.click();
-        renderSpeakerSelectList();
-        modalWrongSpeaker.classList.remove('hidden');
-    });
-
-    function renderSpeakerSelectList() {
-        speakerSelectList.innerHTML = '';
-        state.players.forEach((p) => {
-            const row = document.createElement('button');
-            row.className = 'btn-secondary';
-            row.style.textAlign = 'left';
-            row.style.display = 'flex';
-            row.style.justifyContent = 'space-between';
-            row.innerHTML = `<span>${p.name}</span><span style="color: var(--text-muted); font-size: 0.75rem;">${p.score} pts</span>`;
-
-            row.addEventListener('click', () => {
-                sounds.click();
-                const updated = LocalEngine.LocalRoster.claimRound(p.player_id, state.currentRound.embedding, 50);
-                if (updated) {
-                    sounds.successChime();
-                    showToast(`Claimed! +50 pts to ${updated.name}`);
-                }
-                modalWrongSpeaker.classList.add('hidden');
-                cardGuessResult.classList.add('hidden');
-                state.currentRound = null;
-                refreshRoster();
-            });
-
-            speakerSelectList.appendChild(row);
-        });
-    }
-
-    btnCloseWrongSpeaker.addEventListener('click', () => {
-        sounds.click();
-        modalWrongSpeaker.classList.add('hidden');
-    });
-
-    // -------------------------------------------------------------
-    // Recording: Mode B (Impostor Challenge)
-    // -------------------------------------------------------------
-    btnRecordMimic.addEventListener('click', async () => {
-        const targetId = selectImpostorTarget.value;
-        if (!targetId) {
-            showToast('Select target player first');
-            selectImpostorTarget.focus();
-            return;
-        }
-
-        if (state.isRecording) {
-            await finishMimic(targetId);
-            return;
-        }
-
-        try {
-            await recorder.start(canvasMimic);
-            sounds.recordStart();
-            state.isRecording = true;
-            state.recordingType = 'mimic';
-
-            cardMimicResult.classList.add('hidden');
-            btnRecordMimic.classList.add('recording');
-            textRecordMimic.innerText = 'Mimicking... (Tap to stop)';
-        } catch (err) {
-            showToast('Microphone access denied');
-        }
-    });
-
-    async function finishMimic(targetId) {
-        sounds.recordStop();
-        textRecordMimic.innerText = 'Evaluating...';
-        btnRecordMimic.classList.remove('recording');
-
-        try {
-            const blob = await recorder.stop();
-            state.isRecording = false;
-            state.recordingType = null;
-            if (!blob) return;
-
-            const targetPlayer = state.players.find((p) => p.player_id === targetId);
-            if (!targetPlayer) {
-                showToast('Target player not found');
-                return;
-            }
-
-            const audioData = await api.extractEmbedding(blob);
-            const evalResult = LocalEngine.evaluateImpostor(audioData.embedding, targetPlayer, 0.60, 0.82);
-
-            textMimicVerdict.innerText = evalResult.message;
-            textMimicScore.innerText = `${evalResult.similarity_percent}%`;
-            barMimicProgress.style.width = `${Math.min(100, Math.max(0, evalResult.similarity_percent))}%`;
-            textMimicPoints.innerText = `+${evalResult.points} pts`;
-
-            if (evalResult.points > 0) {
-                LocalEngine.LocalRoster.addScore(targetPlayer.player_id, evalResult.points);
-            }
-
-            if (evalResult.security_breached || evalResult.status === 'CLOSE_MIMIC') {
-                sounds.successChime();
-            } else {
-                sounds.failureTone();
-            }
-
-            cardMimicResult.classList.remove('hidden');
-            refreshRoster();
-        } catch (err) {
-            sounds.failureTone();
-            showToast(err.message || 'Mimic evaluation failed');
-        } finally {
-            textRecordMimic.innerText = 'Attempt Mimicry';
+            textRecordVerify.innerText = 'Verify Identity';
         }
     }
 
     // -------------------------------------------------------------
-    // Modals: Guide, Leaderboard, Reset
+    // Modals: Guide, Reset
     // -------------------------------------------------------------
     btnOpenGuide.addEventListener('click', () => {
         sounds.click();
@@ -553,46 +382,6 @@ document.addEventListener('DOMContentLoaded', () => {
         modalGuide.classList.add('hidden');
     });
 
-    btnOpenLeaderboard.addEventListener('click', () => {
-        sounds.click();
-        const players = LocalEngine.LocalRoster.getScoreboard();
-        renderLeaderboard(players);
-        modalLeaderboard.classList.remove('hidden');
-    });
-
-    btnCloseLeaderboard.addEventListener('click', () => {
-        sounds.click();
-        modalLeaderboard.classList.add('hidden');
-    });
-
-    function renderLeaderboard(players) {
-        leaderboardList.innerHTML = '';
-        if (players.length === 0) {
-            leaderboardList.innerHTML = '<p style="text-align: center; color: var(--text-muted); font-size: 0.8125rem;">No scores yet.</p>';
-            return;
-        }
-
-        players.forEach((p, idx) => {
-            const row = document.createElement('div');
-            row.style.display = 'flex';
-            row.style.alignItems = 'center';
-            row.style.justifyContent = 'space-between';
-            row.style.padding = '0.4rem 0.6rem';
-            row.style.background = 'var(--bg-subtle)';
-            row.style.borderRadius = 'var(--radius-sm)';
-            row.style.fontSize = '0.8125rem';
-
-            row.innerHTML = `
-                <div style="display: flex; gap: 0.5rem; align-items: center;">
-                    <span style="color: var(--text-muted); font-weight: 600;">#${idx + 1}</span>
-                    <span style="font-weight: 600;">${p.name}</span>
-                </div>
-                <span style="font-weight: 700; color: var(--accent);">${p.score} pts</span>
-            `;
-            leaderboardList.appendChild(row);
-        });
-    }
-
     btnOpenReset.addEventListener('click', () => {
         sounds.click();
         modalReset.classList.remove('hidden');
@@ -603,34 +392,30 @@ document.addEventListener('DOMContentLoaded', () => {
         modalReset.classList.add('hidden');
     });
 
-    btnConfirmResetScores.addEventListener('click', () => {
+    btnConfirmResetAll.addEventListener('click', async () => {
         sounds.click();
-        LocalEngine.LocalRoster.resetScoresOnly();
-        showToast('Scores reset to zero');
-        modalReset.classList.add('hidden');
-        refreshRoster();
-    });
-
-    btnConfirmResetAll.addEventListener('click', () => {
-        sounds.click();
-        LocalEngine.LocalRoster.clearAll();
-        showToast('All cleared');
-        modalReset.classList.add('hidden');
-        cardGuessResult.classList.add('hidden');
-        cardMimicResult.classList.add('hidden');
-        refreshRoster();
+        try {
+            // Re-create a new session
+            const res = await api.createSession();
+            state.sessionId = res.session_id;
+            localStorage.setItem('voicegate_session_id', state.sessionId);
+            showToast('Session cleared');
+            modalReset.classList.add('hidden');
+            cardVerifyResult.classList.add('hidden');
+            await refreshIdentities();
+        } catch (err) {
+            showToast("Failed to clear session");
+        }
     });
 
     // Esc closes modals
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             modalGuide.classList.add('hidden');
-            modalLeaderboard.classList.add('hidden');
-            modalWrongSpeaker.classList.add('hidden');
             modalReset.classList.add('hidden');
         }
     });
 
-    // Initial load from device localStorage
-    refreshRoster();
+    // Start
+    await initSession();
 });

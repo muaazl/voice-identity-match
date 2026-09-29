@@ -2,6 +2,12 @@
 
 A voice authentication API that uses biometric 1:1 or 1:N matching.
 
+---
+
+https://github.com/user-attachments/assets/11673477-b098-483a-bb52-79bbd5e8d80f
+
+---
+
 ## Features
 
 1.  **Enrollment:** Takes a short audio clip and a name, and generates a biometric profile (192-D centroid vector).
